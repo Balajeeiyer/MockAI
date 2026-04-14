@@ -47,8 +47,101 @@ jobs:
             core.setOutput('additions', pr.additions);
             core.setOutput('deletions', pr.deletions);
             core.setOutput('changed_files', pr.changed_files);
+            core.setOutput('head_sha', pr.head.sha);
 
             return files;
+
+      - name: Post Inline Code Suggestions
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.issue.number;
+            const headSha = '${{ steps.pr-files.outputs.head_sha }}';
+
+            // Define suggestions for specific lines
+            const suggestions = [
+              {
+                path: 'srv/product-service.js',
+                line: 30,
+                side: 'RIGHT',
+                body: [
+                  '**Bug**: Missing input sanitization on currency field',
+                  '',
+                  'Currency validation lacks trim/uppercase normalization. User input could contain leading/trailing whitespace or mixed case, bypassing validation or causing inconsistent behavior.',
+                  '',
+                  'Consider sanitizing the input before validation:',
+                  '````suggestion',
+                  '    // Validate currency - sanitize input first',
+                  '    const sanitizedCurrency = String(currency || \'\').trim().toUpperCase().slice(0, 3);',
+                  '    const validCurrencies = [\'USD\', \'EUR\', \'GBP\', \'INR\'];',
+                  '    if (sanitizedCurrency && !validCurrencies.includes(sanitizedCurrency)) {',
+                  '      req.error(400, `Invalid currency. Allowed: ${validCurrencies.join(\', \')}`, \'currency\');',
+                  '    }',
+                  '````',
+                  '_Double-check suggestion before committing. Edit this comment for amendments._',
+                  '<!-- PR-Bot Feedback-Section-Start -->',
+                  '---',
+                  '_Please provide feedback on the review comment by checking the appropriate box:_',
+                  '',
+                  '- [ ] <!-- PR-Bot Feedback Awesome --> 🌟 Awesome comment, a human might have missed that.',
+                  '- [ ] <!-- PR-Bot Feedback Helpful --> ✅ Helpful comment',
+                  '- [ ] <!-- PR-Bot Feedback Neutral --> 🤷 Neutral',
+                  '- [ ] <!-- PR-Bot Feedback Not helpful --> ❌ This comment is not helpful<!-- PR-Bot Feedback-Section-End -->'
+                ].join('\n')
+              },
+              {
+                path: 'srv/product-service.js',
+                line: 29,
+                side: 'RIGHT',
+                body: [
+                  '**Best Practices**: Hardcoded configuration should be externalized',
+                  '',
+                  'The currency list is hardcoded directly in business logic. This makes it difficult to add new currencies without code changes and reduces maintainability.',
+                  '',
+                  'Consider extracting to a configuration file. First, create `config/currencies.js`:',
+                  '````suggestion',
+                  'const { validCurrencies } = require(\'../config/currencies\');',
+                  '````',
+                  '',
+                  'Then create `config/currencies.js`:',
+                  '```javascript',
+                  'module.exports = {',
+                  '  validCurrencies: [\'USD\', \'EUR\', \'GBP\', \'INR\'],',
+                  '  defaultCurrency: \'USD\'',
+                  '};',
+                  '```',
+                  '_Double-check suggestion before committing. Edit this comment for amendments._',
+                  '<!-- PR-Bot Feedback-Section-Start -->',
+                  '---',
+                  '_Please provide feedback on the review comment by checking the appropriate box:_',
+                  '',
+                  '- [ ] <!-- PR-Bot Feedback Awesome --> 🌟 Awesome comment, a human might have missed that.',
+                  '- [ ] <!-- PR-Bot Feedback Helpful --> ✅ Helpful comment',
+                  '- [ ] <!-- PR-Bot Feedback Neutral --> 🤷 Neutral',
+                  '- [ ] <!-- PR-Bot Feedback Not helpful --> ❌ This comment is not helpful<!-- PR-Bot Feedback-Section-End -->'
+                ].join('\n')
+              }
+            ];
+
+            // Post each suggestion as a review comment
+            for (const suggestion of suggestions) {
+              try {
+                await github.rest.pulls.createReviewComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber,
+                  commit_id: headSha,
+                  path: suggestion.path,
+                  line: suggestion.line,
+                  side: suggestion.side,
+                  body: suggestion.body
+                });
+                console.log(`Posted suggestion for ${suggestion.path}:${suggestion.line}`);
+              } catch (error) {
+                console.log(`Failed to post suggestion for ${suggestion.path}:${suggestion.line}`, error.message);
+              }
+            }
 
       - name: Analyze Code and Post Review
         uses: actions/github-script@v7
@@ -97,20 +190,7 @@ jobs:
               '',
               '**Issue:** Currency validation lacks input sanitization',
               '',
-              '```javascript',
-              '// Current code:',
-              'const validCurrencies = [\'USD\', \'EUR\', \'GBP\', \'INR\'];',
-              'if (currency && !validCurrencies.includes(currency)) {',
-              '  req.error(400, `Invalid currency. Allowed: ${validCurrencies.join(\', \')}`, \'currency\');',
-              '}',
-              '',
-              '// Suggested fix:',
-              'const sanitizedCurrency = String(currency || \'\').trim().toUpperCase().slice(0, 3);',
-              'const validCurrencies = [\'USD\', \'EUR\', \'GBP\', \'INR\'];',
-              'if (sanitizedCurrency && !validCurrencies.includes(sanitizedCurrency)) {',
-              '  req.error(400, `Invalid currency. Allowed: ${validCurrencies.join(\', \')}`, \'currency\');',
-              '}',
-              '```',
+              '**See inline code suggestion on line 30 for specific fix.**',
               '',
               '**Why:** Prevents injection attacks and ensures consistent format',
               '',
@@ -123,24 +203,7 @@ jobs:
               '',
               '**Issue:** Currency list is hardcoded in business logic',
               '',
-              '**Suggested Fix:**',
-              '',
-              '1. Create `config/currencies.js`:',
-              '```javascript',
-              'module.exports = {',
-              '  validCurrencies: [\'USD\', \'EUR\', \'GBP\', \'INR\'],',
-              '  defaultCurrency: \'USD\'',
-              '};',
-              '```',
-              '',
-              '2. Update `srv/product-service.js`:',
-              '```javascript',
-              'const { validCurrencies } = require(\'../config/currencies\');',
-              '',
-              'if (currency && !validCurrencies.includes(currency)) {',
-              '  req.error(400, `Invalid currency. Allowed: ${validCurrencies.join(\', \')}`, \'currency\');',
-              '}',
-              '```',
+              '**See inline code suggestion on line 29 for specific fix.**',
               '',
               '**Why:** Centralized configuration, easier to maintain and extend',
               '',
@@ -164,7 +227,7 @@ jobs:
               '',
               '**Attack Vector:** Malicious input could bypass validation or cause unexpected behavior',
               '',
-              '**Mitigation:** Apply input sanitization as shown in Code Quality Review above',
+              '**Mitigation:** Apply input sanitization as shown in inline code suggestion',
               '',
               '**CVSS Score:** 5.3 (Medium)',
               '',
@@ -199,11 +262,11 @@ jobs:
               '',
               '1. ✅ **Apply input sanitization** (HIGH) - 5 min',
               '   - File: `srv/product-service.js`',
-              '   - See Code Quality Review for exact code',
+              '   - **Apply inline code suggestion on line 30**',
               '',
               '2. ✅ **Extract configuration** (MEDIUM) - 15 min',
               '   - Create `config/currencies.js`',
-              '   - Update imports in `srv/product-service.js`',
+              '   - **Apply inline code suggestion on line 29**',
               '',
               '3. ✅ **Add tests for sanitization** (HIGH) - 10 min',
               '   - Test edge cases: null, undefined, lowercase, special chars',
@@ -218,7 +281,7 @@ jobs:
               '',
               '---',
               '',
-              '*Analysis complete. Please address the issues above before merging.*'
+              '*Analysis complete. Check the **Files changed** tab for inline code suggestions you can commit directly.*'
             ].join('\n');
 
             // Post the consolidated review
@@ -234,11 +297,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            // Note: These are dummy reviewer IDs for demonstration
-            // In production, these would be actual bot accounts
             try {
-              // GitHub API doesn't allow requesting reviews from non-collaborators
-              // So we'll add labels instead to indicate review stages
               await github.rest.issues.addLabels({
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
@@ -263,7 +322,6 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            // Try to set a check status (may fail due to permissions)
             try {
               await github.rest.repos.createCommitStatus({
                 owner: context.repo.owner,
