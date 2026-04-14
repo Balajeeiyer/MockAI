@@ -30,10 +30,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      # Dependencies not needed for this workflow - all analysis is done via GitHub Scripts
+      # - name: Install dependencies
+      #   run: npm ci
 
       - name: 🤖 Hyperspace Bot - Initial Analysis
         uses: actions/github-script@v7
