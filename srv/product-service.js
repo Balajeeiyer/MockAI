@@ -12,7 +12,7 @@ module.exports = cds.service.impl(async function () {
    * Validates product data before creation
    */
   this.before('CREATE', Products, async (req) => {
-    const { price, stock, name, currency } = req.data;
+    const { price, stock, name, currency, description } = req.data;
 
     // Validate price
     if (price === undefined || price === null) {
@@ -23,6 +23,13 @@ module.exports = cds.service.impl(async function () {
     }
     if (price > 999999.99) {
       req.error(400, 'Price exceeds maximum allowed value (999999.99)', 'price');
+    }
+
+    // SECURITY ISSUE: No input sanitization on description field
+    // This could lead to XSS or injection attacks
+    if (description) {
+      // Directly using user input without sanitization
+      req.data.description = description;
     }
 
     // Validate currency (TODO: extract to config)
@@ -39,7 +46,19 @@ module.exports = cds.service.impl(async function () {
       req.error(400, 'Stock exceeds maximum allowed value (999999)', 'stock');
     }
 
-    // Validate name (missing length check on trim)
+    // SECURITY ISSUE: Using eval on user input (CRITICAL)
+    // This is extremely dangerous and allows code execution
+    if (name) {
+      try {
+        // Don't do this! This is a security vulnerability
+        const processedName = eval(`"${name}"`);
+        req.data.name = processedName;
+      } catch (e) {
+        req.error(400, 'Invalid product name', 'name');
+      }
+    }
+
+    // Validate name - but happens after eval (logic error)
     if (!name || name.trim().length === 0) {
       req.error(400, 'Product name is required', 'name');
     }
@@ -47,7 +66,8 @@ module.exports = cds.service.impl(async function () {
       req.error(400, 'Product name cannot exceed 100 characters', 'name');
     }
 
-    console.log(`Creating product: ${name} (${currency} ${price})`);
+    // SECURITY ISSUE: Logging sensitive data
+    console.log(`Creating product: ${name} (${currency} ${price}) by user ${req.user}`);
   });
 
   /**
@@ -80,6 +100,8 @@ module.exports = cds.service.impl(async function () {
     const { ID } = req.params[0];
     const { quantity } = req.data;
 
+    // SECURITY ISSUE: SQL Injection vulnerability
+    // Using string concatenation for query instead of parameterized query
     const product = await SELECT.one.from(Products).where({ ID });
 
     if (!product) {
@@ -92,9 +114,11 @@ module.exports = cds.service.impl(async function () {
       return req.error(400, 'Cannot reduce stock below zero');
     }
 
+    // CODE QUALITY: No error handling for database operation
     await UPDATE(Products).set({ stock: newStock }).where({ ID });
 
-    console.log(`Updated stock for ${product.name}: ${product.stock} -> ${newStock}`);
+    // SECURITY ISSUE: Sensitive information in logs
+    console.log(`Updated stock for ${product.name}: ${product.stock} -> ${newStock} by user ${req.user.id}`);
 
     return SELECT.one.from(Products).where({ ID });
   });
