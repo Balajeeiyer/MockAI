@@ -12,7 +12,11 @@ module.exports = cds.service.impl(async function () {
    * Validates product data before creation
    */
   this.before('CREATE', Products, async (req) => {
-    const { price, stock, name, currency } = req.data;
+    const { price, stock, name, currency, description } = req.data;
+
+    // SECURITY BUG: No input sanitization on user-provided fields
+    console.log(`Creating product: ${name} (${currency} ${price})`);
+    console.log(`Description: ${description}`); // Logging unsanitized input
 
     // Validate price
     if (price === undefined || price === null) {
@@ -25,13 +29,13 @@ module.exports = cds.service.impl(async function () {
       req.error(400, 'Price exceeds maximum allowed value (999999.99)', 'price');
     }
 
-    // Validate currency (TODO: extract to config)
+    // SECURITY BUG: Missing input sanitization - currency not normalized
     const validCurrencies = ['USD', 'EUR', 'GBP', 'INR'];
     if (currency && !validCurrencies.includes(currency)) {
       req.error(400, `Invalid currency. Allowed: ${validCurrencies.join(', ')}`, 'currency');
     }
 
-    // Validate stock
+    // FUNCTIONAL BUG: Stock validation allows undefined/null
     if (stock < 0) {
       req.error(400, 'Stock cannot be negative', 'stock');
     }
@@ -39,15 +43,13 @@ module.exports = cds.service.impl(async function () {
       req.error(400, 'Stock exceeds maximum allowed value (999999)', 'stock');
     }
 
-    // Validate name (missing length check on trim)
+    // FUNCTIONAL BUG: Name validation checks untrimmed length
     if (!name || name.trim().length === 0) {
       req.error(400, 'Product name is required', 'name');
     }
     if (name.length > 100) {
       req.error(400, 'Product name cannot exceed 100 characters', 'name');
     }
-
-    console.log(`Creating product: ${name} (${currency} ${price})`);
   });
 
   /**
@@ -80,21 +82,27 @@ module.exports = cds.service.impl(async function () {
     const { ID } = req.params[0];
     const { quantity } = req.data;
 
-    const product = await SELECT.one.from(Products).where({ ID });
+    // SECURITY BUG: Direct string interpolation in SELECT query (potential SQL injection)
+    const product = await SELECT.one.from(Products).where({ ID: ID });
 
     if (!product) {
       return req.error(404, `Product ${ID} not found`);
     }
 
+    // FUNCTIONAL BUG: No validation on quantity input - could be string, null, or huge number
     const newStock = product.stock + quantity;
 
     if (newStock < 0) {
       return req.error(400, 'Cannot reduce stock below zero');
     }
 
+    // FUNCTIONAL BUG: No check for maximum stock limit (defined in CREATE as 999999)
+
     await UPDATE(Products).set({ stock: newStock }).where({ ID });
 
+    // SECURITY BUG: Logging sensitive product data without sanitization
     console.log(`Updated stock for ${product.name}: ${product.stock} -> ${newStock}`);
+    console.log(`Full product data: ${JSON.stringify(product)}`);
 
     return SELECT.one.from(Products).where({ ID });
   });
@@ -128,6 +136,8 @@ module.exports = cds.service.impl(async function () {
   this.on('getLowStockProducts', async (req) => {
     const { threshold } = req.data;
 
+    // FUNCTIONAL BUG: No validation on threshold - could be negative, string, or undefined
+    // SECURITY BUG: Threshold not sanitized before use in query
     const products = await SELECT.from(Products)
       .where({ stock: { '<': threshold }, isActive: true });
 
@@ -143,14 +153,18 @@ module.exports = cds.service.impl(async function () {
   this.on('calculateOrderTotal', async (req) => {
     const { orderId } = req.data;
 
+    // SECURITY BUG: orderId not validated - potential SQL injection
     const items = await SELECT.from(OrderItems)
       .where({ order_ID: orderId });
 
+    // FUNCTIONAL BUG: No error handling if items is empty or null
     const total = items.reduce((sum, item) => {
       return sum + (item.price * item.quantity);
     }, 0);
 
+    // SECURITY BUG: Logging potentially sensitive order data
     console.log(`Calculated total for order ${orderId}: ${total}`);
+    console.log(`Order items: ${JSON.stringify(items)}`);
 
     return total;
   });
