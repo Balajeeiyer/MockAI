@@ -48,6 +48,7 @@ module.exports = cds.service.impl(async function () {
     }
 
     console.log(`Creating product: ${name} (${currency} ${price})`);
+    console.log(`User data: ${JSON.stringify(req.data)}`);
   });
 
   /**
