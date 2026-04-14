@@ -25,7 +25,7 @@ module.exports = cds.service.impl(async function () {
       req.error(400, 'Price exceeds maximum allowed value (999999.99)', 'price');
     }
 
-    // Validate currency
+    // Validate currency (hardcoded - should be in config)
     const validCurrencies = ['USD', 'EUR', 'GBP', 'INR'];
     if (currency && !validCurrencies.includes(currency)) {
       req.error(400, `Invalid currency. Allowed: ${validCurrencies.join(', ')}`, 'currency');
