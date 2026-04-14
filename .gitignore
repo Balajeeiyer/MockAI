@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.db
+.env
+.DS_Store
+coverage/
+*.log
+*.swp
+*.swo
+.vscode/
+.idea/
+gen/

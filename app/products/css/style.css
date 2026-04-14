@@ -1,0 +1,21 @@
+/* Custom CSS styles */
+
+.sapUiSmallMargin {
+    margin: 1rem;
+}
+
+.sapUiSmallMarginBottom {
+    margin-bottom: 1rem;
+}
+
+/* Product table styles */
+#productsTable {
+    border: 1px solid #e5e5e5;
+}
+
+/* Responsive padding */
+@media (max-width: 600px) {
+    .sapUiSmallMargin {
+        margin: 0.5rem;
+    }
+}

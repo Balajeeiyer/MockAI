@@ -1,0 +1,133 @@
+<mvc:View
+    controllerName="com.sap.mock.products.controller.Main"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns="sap.m"
+    xmlns:core="sap.ui.core">
+    <Page
+        id="main"
+        title="{i18n>title}">
+        <headerContent>
+            <Button
+                icon="sap-icon://add"
+                text="{i18n>createProduct}"
+                press=".onCreateProduct"/>
+            <Button
+                icon="sap-icon://refresh"
+                press=".onRefresh"/>
+        </headerContent>
+        <content>
+            <VBox class="sapUiSmallMargin">
+                <HBox class="sapUiSmallMarginBottom">
+                    <SearchField
+                        id="searchField"
+                        width="50%"
+                        search=".onSearch"
+                        placeholder="{i18n>searchPlaceholder}"/>
+                    <ComboBox
+                        id="categoryFilter"
+                        width="200px"
+                        placeholder="{i18n>filterByCategory}"
+                        change=".onFilterCategory"
+                        items="{/Categories}">
+                        <core:Item key="{ID}" text="{name}"/>
+                    </ComboBox>
+                </HBox>
+                <Table
+                    id="productsTable"
+                    items="{
+                        path: '/Products',
+                        sorter: {
+                            path: 'name'
+                        }
+                    }"
+                    mode="SingleSelectMaster"
+                    selectionChange=".onSelectionChange">
+                    <columns>
+                        <Column width="12em">
+                            <Text text="{i18n>columnName}"/>
+                        </Column>
+                        <Column
+                            minScreenWidth="Tablet"
+                            demandPopin="true">
+                            <Text text="{i18n>columnDescription}"/>
+                        </Column>
+                        <Column
+                            minScreenWidth="Tablet"
+                            demandPopin="true"
+                            hAlign="End">
+                            <Text text="{i18n>columnPrice}"/>
+                        </Column>
+                        <Column
+                            minScreenWidth="Desktop"
+                            demandPopin="true"
+                            hAlign="End">
+                            <Text text="{i18n>columnStock}"/>
+                        </Column>
+                        <Column
+                            minScreenWidth="Desktop"
+                            demandPopin="true">
+                            <Text text="{i18n>columnCategory}"/>
+                        </Column>
+                        <Column
+                            minScreenWidth="Tablet"
+                            demandPopin="true">
+                            <Text text="{i18n>columnStatus}"/>
+                        </Column>
+                        <Column hAlign="End">
+                            <Text text="{i18n>columnActions}"/>
+                        </Column>
+                    </columns>
+                    <items>
+                        <ColumnListItem type="Navigation" press=".onProductPress">
+                            <cells>
+                                <ObjectIdentifier
+                                    title="{name}"
+                                    text="{ID}"/>
+                                <Text text="{description}"/>
+                                <ObjectNumber
+                                    number="{
+                                        path: 'price',
+                                        type: 'sap.ui.model.type.Currency',
+                                        formatOptions: {showMeasure: false}
+                                    }"
+                                    unit="{currency}"/>
+                                <ObjectNumber
+                                    number="{stock}"
+                                    state="{
+                                        path: 'stock',
+                                        formatter: '.formatter.stockState'
+                                    }"/>
+                                <Text text="{category/name}"/>
+                                <ObjectStatus
+                                    text="{
+                                        path: 'isActive',
+                                        formatter: '.formatter.statusText'
+                                    }"
+                                    state="{
+                                        path: 'isActive',
+                                        formatter: '.formatter.statusState'
+                                    }"/>
+                                <HBox>
+                                    <Button
+                                        icon="sap-icon://edit"
+                                        type="Transparent"
+                                        press=".onEditProduct"/>
+                                    <Button
+                                        icon="sap-icon://delete"
+                                        type="Transparent"
+                                        press=".onDeleteProduct"/>
+                                </HBox>
+                            </cells>
+                        </ColumnListItem>
+                    </items>
+                </Table>
+            </VBox>
+        </content>
+        <footer>
+            <Toolbar>
+                <ToolbarSpacer/>
+                <Text text="{i18n>totalProducts}: {/Products/$count}"/>
+            </Toolbar>
+        </footer>
+    </Page>
+</mvc:View>
