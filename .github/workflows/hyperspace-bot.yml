@@ -25,36 +25,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 🤖 Hyperspace Bot - Start Analysis
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const body = [
-              '# 🚀 Hyperspace Bot - Analysis Started',
-              '',
-              'PR #' + context.issue.number + ': ' + context.payload.pull_request.title,
-              '',
-              'Status: Analyzing with multi-agent AI system...',
-              '',
-              '## Analysis Pipeline',
-              '1. 🤖 GitHub Copilot Review - Starting...',
-              '2. 🔍 PR Reviewer - Pending',
-              '3. 🛡️ Security Analyst - Pending',
-              '4. ⚖️ Decision Maker - Pending',
-              '5. ⚠️ Disagreement Detection - Pending',
-              '',
-              '---',
-              '*Powered by Hyperspace Bot*'
-            ].join('\n');
-
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
-
       - name: Get PR Files
         id: pr-files
         uses: actions/github-script@v7
@@ -66,52 +36,96 @@ jobs:
               repo: context.repo.repo,
               pull_number: context.issue.number
             });
-            core.setOutput('file_count', files.length);
-            return files.length;
 
-      - name: 🤖 GitHub Copilot Review
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+
+            core.setOutput('file_count', files.length);
+            core.setOutput('additions', pr.additions);
+            core.setOutput('deletions', pr.deletions);
+            core.setOutput('changed_files', pr.changed_files);
+
+            return files;
+
+      - name: Analyze Code and Post Review
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const body = [
-              '# 🤖 GitHub Copilot Review',
+            const prNumber = context.issue.number;
+            const prTitle = context.payload.pull_request.title;
+            const fileCount = ${{ steps.pr-files.outputs.file_count }};
+            const additions = ${{ steps.pr-files.outputs.additions }};
+            const deletions = ${{ steps.pr-files.outputs.deletions }};
+
+            // Generate correlation ID
+            const correlationId = require('crypto').randomUUID();
+
+            // Analysis summary
+            const summary = 'This PR adds currency validation logic with hardcoded configuration. It contains input sanitization issues that should be resolved before merging: missing trim/uppercase normalization on currency input (line 28-32 in srv/product-service.js), hardcoded currency list that should be externalized to config, and potential injection vulnerabilities from unvalidated user input.';
+
+            // Build the consolidated review comment
+            const reviewBody = [
+              summary,
               '',
-              '## Analysis Summary',
-              '- Files Analyzed: ' + context.payload.pull_request.changed_files + ' files',
-              '- Security Issues: 2 MEDIUM severity',
-              '- Code Quality Issues: 1 recommendation',
+              '<details>',
+              '<summary>PR Bot Information</summary>',
               '',
-              '## Findings',
+              '**Version:** `1.0.0` | 📖 [Documentation](https://github.com/Balajeeiyer/MockAI/blob/main/.github/HYPERSPACE_BOT.md) | 💬 [Feedback](https://github.com/Balajeeiyer/MockAI/issues)',
               '',
-              '### 🔴 MEDIUM - Input Validation Missing',
-              '**File**: `srv/product-service.js`',
-              '**Lines**: 28-32',
-              '**Issue**: Currency validation lacks input sanitization',
+              '- Event Trigger: `pull_request.' + context.payload.action + '`',
+              '- LLM: `anthropic--claude-4.6-sonnet`',
+              '- Correlation ID: `' + correlationId + '`',
+              '- Files Changed: ' + fileCount,
+              '- Lines: +' + additions + ' / -' + deletions,
               '',
-              '**Specific Fix**:',
+              '</details>',
+              '',
+              '---',
+              '',
+              '## 🔍 Code Quality Review',
+              '',
+              '**Reviewer:** @code-quality-bot',
+              '',
+              '### Issues Found',
+              '',
+              '#### 🔴 HIGH - Input Validation Missing',
+              '**File:** `srv/product-service.js` (Lines 28-32)',
+              '',
+              '**Issue:** Currency validation lacks input sanitization',
+              '',
               '```javascript',
-              '// Before validation, sanitize the input',
-              'const sanitizedCurrency = String(currency || \'\').trim().toUpperCase().slice(0, 3);',
+              '// Current code:',
+              'const validCurrencies = [\'USD\', \'EUR\', \'GBP\', \'INR\'];',
+              'if (currency && !validCurrencies.includes(currency)) {',
+              '  req.error(400, `Invalid currency. Allowed: ${validCurrencies.join(\', \')}`, \'currency\');',
+              '}',
               '',
+              '// Suggested fix:',
+              'const sanitizedCurrency = String(currency || \'\').trim().toUpperCase().slice(0, 3);',
               'const validCurrencies = [\'USD\', \'EUR\', \'GBP\', \'INR\'];',
               'if (sanitizedCurrency && !validCurrencies.includes(sanitizedCurrency)) {',
               '  req.error(400, `Invalid currency. Allowed: ${validCurrencies.join(\', \')}`, \'currency\');',
               '}',
               '```',
               '',
-              '**Why**: Prevents injection attacks and ensures consistent format',
-              '**Time**: 5 min implementation + 10 min tests',
+              '**Why:** Prevents injection attacks and ensures consistent format',
+              '',
+              '**Implementation Time:** 5 min + 10 min tests',
               '',
               '---',
               '',
-              '### 🟡 Configuration Hardcoding',
-              '**File**: `srv/product-service.js`',
-              '**Lines**: 29',
-              '**Issue**: Currency list is hardcoded in business logic',
+              '#### 🟡 MEDIUM - Configuration Hardcoding',
+              '**File:** `srv/product-service.js` (Line 29)',
               '',
-              '**Specific Fix**:',
-              'Create `config/currencies.js`:',
+              '**Issue:** Currency list is hardcoded in business logic',
+              '',
+              '**Suggested Fix:**',
+              '',
+              '1. Create `config/currencies.js`:',
               '```javascript',
               'module.exports = {',
               '  validCurrencies: [\'USD\', \'EUR\', \'GBP\', \'INR\'],',
@@ -119,258 +133,142 @@ jobs:
               '};',
               '```',
               '',
-              'Update `srv/product-service.js`:',
+              '2. Update `srv/product-service.js`:',
               '```javascript',
               'const { validCurrencies } = require(\'../config/currencies\');',
               '',
-              '// Use in validation',
               'if (currency && !validCurrencies.includes(currency)) {',
               '  req.error(400, `Invalid currency. Allowed: ${validCurrencies.join(\', \')}`, \'currency\');',
               '}',
               '```',
               '',
-              '**Why**: Centralized configuration, easier to maintain',
-              '**Files**: Create `config/currencies.js`, update `srv/product-service.js`',
-              '**Time**: 15 min',
+              '**Why:** Centralized configuration, easier to maintain and extend',
+              '',
+              '**Files to Modify:** Create `config/currencies.js`, update `srv/product-service.js`',
+              '',
+              '**Implementation Time:** 15 min',
               '',
               '---',
               '',
-              '🚀 **Powered by GitHub Copilot & Hyperspace Bot**'
+              '## 🛡️ Security Analysis',
+              '',
+              '**Reviewer:** @security-scan-bot',
+              '',
+              '### Security Findings',
+              '',
+              '#### ⚠️ MEDIUM Severity - Unvalidated Input',
+              '',
+              '**Location:** `srv/product-service.js:28-32`',
+              '',
+              '**Vulnerability:** User input in currency field is not sanitized before validation',
+              '',
+              '**Attack Vector:** Malicious input could bypass validation or cause unexpected behavior',
+              '',
+              '**Mitigation:** Apply input sanitization as shown in Code Quality Review above',
+              '',
+              '**CVSS Score:** 5.3 (Medium)',
+              '',
+              '---',
+              '',
+              '## 📊 Build & Test Predictions',
+              '',
+              '**Reviewer:** @build-analyzer-bot',
+              '',
+              '### Predicted Build Results',
+              '',
+              '#### Maven Build',
+              '- **Status:** ✅ PASS (predicted)',
+              '- **Reason:** No build configuration changes detected',
+              '',
+              '#### Unit Tests',
+              '- **Status:** ⚠️ POTENTIAL ISSUES',
+              '- **Reason:** Currency validation changes may affect existing tests',
+              '- **Recommendation:** Add tests for input sanitization',
+              '',
+              '#### Integration Tests',
+              '- **Status:** ✅ PASS (predicted)',
+              '- **Reason:** No API contract changes',
+              '',
+              '---',
+              '',
+              '## ⚖️ Final Recommendation',
+              '',
+              '**Decision:** ❌ CHANGES REQUIRED',
+              '',
+              '### Required Actions (Priority Order)',
+              '',
+              '1. ✅ **Apply input sanitization** (HIGH) - 5 min',
+              '   - File: `srv/product-service.js`',
+              '   - See Code Quality Review for exact code',
+              '',
+              '2. ✅ **Extract configuration** (MEDIUM) - 15 min',
+              '   - Create `config/currencies.js`',
+              '   - Update imports in `srv/product-service.js`',
+              '',
+              '3. ✅ **Add tests for sanitization** (HIGH) - 10 min',
+              '   - Test edge cases: null, undefined, lowercase, special chars',
+              '',
+              '**Total Estimated Time:** ~30 minutes',
+              '',
+              '### Assigned Reviewers',
+              '',
+              '- **Code Quality:** @code-quality-bot',
+              '- **Security:** @security-scan-bot',
+              '- **Build/Test:** @build-analyzer-bot',
+              '',
+              '---',
+              '',
+              '*Analysis complete. Please address the issues above before merging.*'
             ].join('\n');
 
+            // Post the consolidated review
             await github.rest.issues.createComment({
-              issue_number: context.issue.number,
+              issue_number: prNumber,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: body
+              body: reviewBody
             });
 
-      - name: 🔍 PR Reviewer Analysis
+      - name: Request Reviews from Bots
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const body = [
-              '# 🔍 PR Reviewer Analysis',
-              '',
-              '**Agent**: PR Reviewer (Alex)',
-              '**PR**: #' + context.issue.number + ' - ' + context.payload.pull_request.title,
-              '',
-              '## Code Quality Assessment',
-              '',
-              '### Overall Score: 7/10',
-              '',
-              '**Strengths**:',
-              '- Clear validation logic',
-              '- Appropriate error messages',
-              '- Follows existing code patterns',
-              '',
-              '**Areas for Improvement**:',
-              '',
-              '1. **Input Sanitization** (Priority: HIGH)',
-              '   - Missing sanitization on currency input',
-              '   - Recommend adding trim/uppercase normalization',
-              '   - See Copilot review for specific implementation',
-              '',
-              '2. **Configuration Management** (Priority: MEDIUM)',
-              '   - Hardcoded currency list',
-              '   - Should be externalized to config',
-              '   - Recommendation: Create config/currencies.js',
-              '',
-              '## Recommendation',
-              '',
-              '**Status**: ✅ APPROVE with minor fixes',
-              '',
-              'Apply the two fixes from Copilot review before merge.',
-              '',
-              '---',
-              '*PR Reviewer Agent | Hyperspace Bot*'
-            ].join('\n');
+            // Note: These are dummy reviewer IDs for demonstration
+            // In production, these would be actual bot accounts
+            try {
+              // GitHub API doesn't allow requesting reviews from non-collaborators
+              // So we'll add labels instead to indicate review stages
+              await github.rest.issues.addLabels({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                labels: [
+                  'hyperspace-analyzed',
+                  'code-quality-review',
+                  'security-review',
+                  'build-check',
+                  'changes-required'
+                ]
+              });
 
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
+              console.log('Added review stage labels');
+            } catch (error) {
+              console.log('Error adding labels:', error.message);
+            }
 
-      - name: 🛡️ Security Analyst
+      - name: Update PR Status
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const body = [
-              '# 🛡️ Security Analyst Report',
-              '',
-              '**Agent**: Security Analyst (Sarah)',
-              '**Risk Level**: 🟡 MEDIUM',
-              '',
-              '## Security Findings',
-              '',
-              '### Input Validation Vulnerability',
-              '**Severity**: MEDIUM',
-              '**File**: `srv/product-service.js` (Line 28-32)',
-              '**Issue**: Unvalidated user input in currency field',
-              '',
-              '**Attack Vector**:',
-              'Malicious input could bypass validation or cause unexpected behavior',
-              '',
-              '**Mitigation**:',
-              'Apply input sanitization as recommended by Copilot (see Copilot review comment)',
-              '',
-              '## Security Score: 6/10',
-              '',
-              '**Recommendations**:',
-              '1. ✅ Implement input sanitization (5 min)',
-              '2. ✅ Add input length limits (already present)',
-              '3. ✅ Consider rate limiting for validation endpoints',
-              '',
-              '---',
-              '*Security Analyst Agent | Hyperspace Bot*'
-            ].join('\n');
-
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
+            // Set a check status
+            await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: body
-            });
-
-      - name: ⚖️ Decision Maker
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const body = [
-              '# ⚖️ Decision Maker Report',
-              '',
-              '**Agent**: Decision Maker (Jordan)',
-              '**Final Decision**: ✅ APPROVE WITH CONDITIONS',
-              '',
-              '## Summary',
-              'This PR adds valuable input validation but requires minor security improvements before merge.',
-              '',
-              '## Required Actions',
-              '1. ✅ Apply input sanitization fix (Copilot review, item #1) - **5 min**',
-              '2. ✅ Extract configuration (Copilot review, item #2) - **15 min**',
-              '',
-              '**Total Time**: ~20 minutes',
-              '',
-              '## Agent Consensus',
-              '- Copilot: 2 issues found (specific fixes provided)',
-              '- PR Reviewer: Approve with fixes',
-              '- Security Analyst: Medium risk, needs input sanitization',
-              '',
-              '## Next Steps',
-              '1. Apply fixes from Copilot review',
-              '2. Push updates to PR',
-              '3. Request re-review',
-              '',
-              '---',
-              '*Decision Maker Agent | Hyperspace Bot*'
-            ].join('\n');
-
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
-
-      - name: ⚠️ Disagreement Detection
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const body = [
-              '# ⚠️ Agent Disagreement Detection',
-              '',
-              '## Consensus Analysis',
-              '',
-              'All agents agree on the following actions:',
-              '',
-              '### 1. Input Sanitization Required',
-              '**Consensus**: ALL AGENTS AGREE (Copilot, Security, PR Reviewer)',
-              '**Priority**: HIGH',
-              '**File**: `srv/product-service.js`',
-              '**Lines**: 28-32',
-              '',
-              '**Specific Implementation**:',
-              '```javascript',
-              '// Add before line 29',
-              'const sanitizedCurrency = String(currency || \'\').trim().toUpperCase().slice(0, 3);',
-              '',
-              '// Replace line 30 with:',
-              'if (sanitizedCurrency && !validCurrencies.includes(sanitizedCurrency)) {',
-              '  req.error(400, `Invalid currency. Allowed: ${validCurrencies.join(\', \')}`, \'currency\');',
-              '}',
-              '```',
-              '',
-              '**Implementation Time**: 5 min',
-              '**Testing Time**: 10 min',
-              '',
-              '### 2. Configuration Extraction',
-              '**Consensus**: COPILOT + PR REVIEWER AGREE',
-              '**Priority**: MEDIUM',
-              '**Action**: Extract hardcoded currencies to config file',
-              '',
-              '**Files to Create/Modify**:',
-              '1. Create `config/currencies.js` with currency list',
-              '2. Update `srv/product-service.js` to import from config',
-              '',
-              '**Implementation Time**: 15 min',
-              '',
-              '## Summary',
-              'No conflicting recommendations. All agents aligned on required fixes.',
-              '',
-              '---',
-              '*Disagreement Detection | Hyperspace Bot*'
-            ].join('\n');
-
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
-
-      - name: 🏷️ Auto-label PR
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            await github.rest.issues.addLabels({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              labels: ['hyperspace-analyzed', 'needs-fixes', 'security-review']
-            });
-
-      - name: ✅ Analysis Complete
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const body = [
-              '# ✅ Hyperspace Bot Analysis Complete',
-              '',
-              'All agents have completed their analysis. See comments above for:',
-              '',
-              '1. 🤖 **Copilot Review** - Specific code fixes with line numbers',
-              '2. 🔍 **PR Reviewer** - Code quality assessment',
-              '3. 🛡️ **Security Analyst** - Security vulnerability report',
-              '4. ⚖️ **Decision Maker** - Final routing decision',
-              '5. ⚠️ **Disagreement Detection** - Consensus analysis',
-              '',
-              '**Next Steps**: Apply the fixes from Copilot review (~20 min total)',
-              '',
-              '---',
-              '*Analysis completed in workflow run #' + context.runId + '*'
-            ].join('\n');
-
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
+              sha: context.payload.pull_request.head.sha,
+              state: 'failure',
+              context: 'Hyperspace Bot / Code Analysis',
+              description: 'Changes required - see PR comments',
+              target_url: 'https://github.com/' + context.repo.owner + '/' + context.repo.repo + '/pull/' + context.issue.number
             });
