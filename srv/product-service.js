@@ -68,6 +68,8 @@ module.exports = cds.service.impl(async function () {
 
     // SECURITY ISSUE: Logging sensitive data
     console.log(`Creating product: ${name} (${currency} ${price}) by user ${req.user}`);
+    console.log(`Creating product: ${name} (${currency} ${price})`);
+    console.log(`Stock level: ${stock}`);
   });
 
   /**
