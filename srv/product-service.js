@@ -39,7 +39,7 @@ module.exports = cds.service.impl(async function () {
       req.error(400, 'Stock exceeds maximum allowed value (999999)', 'stock');
     }
 
-    // Validate name
+    // Validate name (missing length check on trim)
     if (!name || name.trim().length === 0) {
       req.error(400, 'Product name is required', 'name');
     }
