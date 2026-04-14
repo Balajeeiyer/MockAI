@@ -428,7 +428,7 @@ jobs:
               repo: context.repo.repo,
               body: securityReport.join('\n')
             });
-            
+
             // Add security labels
             const labels = ['security-scanned'];
             if (totalCritical > 0) {
@@ -436,10 +436,116 @@ jobs:
             } else if (totalHigh >= 3) {
               labels.push('security-warning');
             }
-            
+
             await github.rest.issues.addLabels({
               issue_number: prNumber,
               owner: context.repo.owner,
               repo: context.repo.repo,
               labels: labels
             });
+
+      - name: Assign Reviewers on Security Failure
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const prNumber = context.issue.number || '${{ github.event.inputs.pr_number }}';
+
+            // Read scan results
+            const sastResults = JSON.parse(fs.readFileSync('sast-results.json', 'utf8'));
+            const scaResults = JSON.parse(fs.readFileSync('sca-results.json', 'utf8'));
+            const containerResults = JSON.parse(fs.readFileSync('container-results.json', 'utf8'));
+
+            const totalCritical = sastResults.critical + scaResults.critical + containerResults.critical;
+            const totalHigh = sastResults.high + scaResults.high + containerResults.high;
+
+            // Only assign if security failed
+            if (totalCritical > 0 || totalHigh >= 3) {
+              const prAuthor = context.payload.pull_request.user.login;
+
+              // Post assignment comment
+              const assignmentComment = [
+                '## 🚨 Security Review Required',
+                '',
+                '**Status:** Security scan ' + (totalCritical > 0 ? 'FAILED with CRITICAL issues' : 'WARNING - High severity issues detected'),
+                '',
+                '### Assigned Reviewers',
+                '',
+                '- 👤 **PR Author:** @' + prAuthor + ' - Please address the security findings',
+                '- 🛡️ **Security Contact:** @security-team-lead - Security review required',
+                '',
+                '### Quick Fix Guide',
+                '',
+                '#### 1. SAST Issues (Code Vulnerabilities)',
+                ''
+              ];
+
+              // Add SAST fixes
+              sastResults.findings.filter(f => f.severity === 'CRITICAL' || f.severity === 'HIGH').forEach((finding, index) => {
+                assignmentComment.push(
+                  '**Issue ' + (index + 1) + ':** ' + finding.category + ' at `' + finding.file + ':' + finding.line + '`',
+                  '',
+                  '```javascript',
+                  '// ' + finding.description,
+                  finding.recommendation,
+                  '```',
+                  ''
+                );
+              });
+
+              assignmentComment.push(
+                '#### 2. SCA Issues (Vulnerable Dependencies)',
+                '',
+                'Update the following packages in `package.json`:',
+                '',
+                '```bash',
+                '# Critical and High severity fixes'
+              );
+
+              // Add SCA fixes
+              scaResults.vulnerabilities.filter(v => v.severity === 'CRITICAL' || v.severity === 'HIGH').forEach(vuln => {
+                const pkgName = vuln.package.split('@')[0];
+                assignmentComment.push('npm install ' + pkgName + '@' + vuln.fixed_version + '  # Fixes ' + vuln.vulnerability);
+              });
+
+              assignmentComment.push(
+                '```',
+                '',
+                '#### 3. Re-run Security Scan',
+                '',
+                'After applying fixes:',
+                '1. Commit and push changes',
+                '2. Security pipeline will automatically re-run',
+                '3. PR will be unblocked if all CRITICAL issues are resolved',
+                '',
+                '---',
+                '',
+                '**Next Steps:**',
+                '1. @' + prAuthor + ' - Apply the fixes above',
+                '2. @security-team-lead - Review after fixes applied',
+                '3. Re-run pipeline: Push new commit or comment `/rerun-security`',
+                '',
+                '**Estimated Fix Time:** ' + (totalCritical * 15 + totalHigh * 10) + ' minutes',
+                ''
+              );
+
+              // Post the assignment comment
+              await github.rest.issues.createComment({
+                issue_number: prNumber,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: assignmentComment.join('\n')
+              });
+
+              // Try to request reviews (may fail if reviewers don't have access)
+              try {
+                // Note: In real implementation, replace 'security-team-lead' with actual username
+                // For now, we'll just add a comment mentioning them
+                console.log('Assignment comment posted with @' + prAuthor + ' and @security-team-lead');
+              } catch (error) {
+                console.log('Could not request reviews:', error.message);
+              }
+            }
+
