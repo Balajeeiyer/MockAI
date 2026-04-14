@@ -539,13 +539,36 @@ jobs:
                 body: assignmentComment.join('\n')
               });
 
-              // Try to request reviews (may fail if reviewers don't have access)
+              // Assign PR to author and add to assignees
               try {
-                // Note: In real implementation, replace 'security-team-lead' with actual username
-                // For now, we'll just add a comment mentioning them
-                console.log('Assignment comment posted with @' + prAuthor + ' and @security-team-lead');
+                // Add PR author as assignee
+                await github.rest.issues.addAssignees({
+                  issue_number: prNumber,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  assignees: [prAuthor]
+                });
+                console.log('Added ' + prAuthor + ' as assignee');
               } catch (error) {
-                console.log('Could not request reviews:', error.message);
+                console.log('Could not add assignee:', error.message);
+              }
+
+              // Try to request review from security team
+              // Note: This requires the reviewer to be a collaborator
+              // For demo purposes, we're using the PR author as a fallback
+              try {
+                await github.rest.pulls.requestReviewers({
+                  pull_number: prNumber,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  reviewers: [prAuthor], // In production: replace with actual security team member usernames
+                  team_reviewers: [] // Can add team slugs here if using GitHub teams
+                });
+                console.log('Requested review from ' + prAuthor);
+              } catch (error) {
+                console.log('Could not request review:', error.message);
+                // Fallback: Just log that we mentioned them in the comment
+                console.log('Security contact @security-team-lead mentioned in comment');
               }
             }
 

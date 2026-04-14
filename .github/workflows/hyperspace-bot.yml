@@ -316,6 +316,34 @@ jobs:
               console.log('Error adding labels:', error.message);
             }
 
+            // Assign PR to author for review
+            try {
+              const prAuthor = context.payload.pull_request.user.login;
+
+              await github.rest.issues.addAssignees({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                assignees: [prAuthor]
+              });
+
+              console.log('Added ' + prAuthor + ' as assignee');
+            } catch (error) {
+              console.log('Could not add assignee:', error.message);
+            }
+
+            // Request review (using PR author as reviewer for demo)
+            // In production: replace with actual code reviewer usernames
+            try {
+              const prAuthor = context.payload.pull_request.user.login;
+
+              // Note: Can't request review from PR author, so this is for demo only
+              // In production, use actual reviewer usernames
+              console.log('Would request review from code-quality-bot, security-scan-bot, build-analyzer-bot');
+            } catch (error) {
+              console.log('Could not request review:', error.message);
+            }
+
       - name: Update PR Status
         uses: actions/github-script@v7
         continue-on-error: true
