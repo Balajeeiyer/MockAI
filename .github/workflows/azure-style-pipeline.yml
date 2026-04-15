@@ -165,8 +165,35 @@ jobs:
 
             const headSha = pr.head.sha;
 
-            // Post inline suggestions for security issues
-            const suggestions = [
+            // Delete old comments from this workflow
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber
+            });
+
+            for (const comment of comments) {
+              if (comment.body.includes('🔒 Security Analysis Summary') ||
+                  comment.body.includes('💡 Code Quality & Test Coverage')) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: comment.id
+                });
+              }
+            }
+
+            // Get changed files in the PR
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+
+            const changedFiles = files.map(f => f.filename);
+
+            // Post inline suggestions ONLY for files that were actually changed
+            const allSuggestions = [
               {
                 path: 'srv/product-service.js',
                 line: 35,
@@ -228,7 +255,11 @@ jobs:
               }
             ];
 
+            // Filter to only files that were changed
+            const suggestions = allSuggestions.filter(s => changedFiles.includes(s.path));
+
             // Post each inline suggestion
+            let inlineSuggestionsPosted = 0;
             for (const suggestion of suggestions) {
               try {
                 await github.rest.pulls.createReviewComment({
@@ -241,32 +272,52 @@ jobs:
                   line: suggestion.line,
                   side: suggestion.side
                 });
+                inlineSuggestionsPosted++;
               } catch (error) {
                 console.log(`Failed to post suggestion for ${suggestion.path}:${suggestion.line}: ${error.message}`);
               }
             }
 
-            // Also post a summary comment
-            const summaryBody = `## 🔒 Security Analysis Summary
+            // Post a summary comment
+            let summaryBody = `## 🔒 Security Analysis Summary
 
             ### 📊 Findings
-            - **Critical**: 1 (SQL Injection)
-            - **High**: 1 (XSS)
-            - **Total**: 2 security issues
+            - **High**: 2 security issues detected
+            - **Total**: 2 issues
 
-            ### 📍 Inline Suggestions Posted
-            I've added inline code suggestions directly on the affected lines:
-            - \`srv/product-service.js:280\` - SQL Injection fix
-            - \`srv/product-service.js:95\` - XSS sanitization
+            `;
 
-            ### ✅ How to Apply
-            1. Review each inline suggestion above
-            2. Click "Commit suggestion" to apply individual fixes
-            3. Or apply manually if you prefer different approach
+            if (inlineSuggestionsPosted > 0) {
+              summaryBody += `### 📍 Inline Suggestions
+I've added ${inlineSuggestionsPosted} inline code suggestion(s) directly on the affected lines:
+- \`srv/product-service.js:35\` - XSS vulnerability fix
+- \`srv/product-service.js:54\` - Input validation fix
 
-            ### 📚 Resources
-            - [OWASP Top 10](https://owasp.org/www-project-top-ten/)
-            - [CAP Security Guide](https://cap.cloud.sap/docs/guides/security/)
+**To view**: Go to the **Files changed** tab and look for the 💬 comment icons.
+**To apply**: Click the **"Commit suggestion"** button on any suggestion.
+
+`;
+            } else {
+              summaryBody += `### ℹ️ Note
+Security issues detected but inline suggestions can only be posted on files changed in this PR.
+
+**Issues found in**:
+- \`srv/product-service.js:35\` - XSS vulnerability (sanitize description input)
+- \`srv/product-service.js:54\` - Input validation (sanitize name input)
+
+**To fix**: Modify these files in your PR to see inline commit suggestions.
+
+`;
+            }
+
+            summaryBody += `### ✅ How to Apply
+1. Review inline suggestions in the "Files changed" tab
+2. Click "Commit suggestion" to apply individual fixes
+3. Or apply manually if you prefer a different approach
+
+### 📚 Resources
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+- [CAP Security Guide](https://cap.cloud.sap/docs/guides/security/)
             `;
 
             await github.rest.issues.createComment({
