@@ -3,7 +3,12 @@ const cds = require('@sap/cds');
 /**
  * Product Service Implementation
  * Business logic for product management
- * Version: 1.1.0 - Enhanced with validation
+ * Version: 2.0.0 - Hyperspace Bot Demo
+ *
+ * This version demonstrates all Hyperspace Bot features:
+ * - SAP CAP code analysis
+ * - Security scanning (WhiteSource, Checkmarx, SonarQube)
+ * - Cross-repository integration testing
  */
 module.exports = cds.service.impl(async function () {
   const { Products, Orders, OrderItems } = this.entities;
