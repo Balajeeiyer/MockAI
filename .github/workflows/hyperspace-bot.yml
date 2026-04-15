@@ -263,24 +263,30 @@ jobs:
             const hasCrossRepoToken = '${{ secrets.CROSS_REPO_TOKEN }}' !== '';
 
             let comment = '## 🔗 Cross-Repository Integration Tests\n\n';
-            comment += 'API changes detected in this PR. Integration tests will be triggered in dependent repositories.\n\n';
+            comment += 'API changes detected in this PR. Integration tests need to be triggered in dependent repositories.\n\n';
+
+            comment += '### 📬 Repository Owner Notification\n\n';
+            comment += '**@Balajeeiyer** - API changes detected that may affect dependent repositories:\n\n';
 
             if (!hasCrossRepoToken) {
-              comment += '### ⚠️ Configuration Required\n\n';
-              comment += '- Dispatch attempted ⚠️ (requires CROSS_REPO_TOKEN)\n\n';
-              comment += 'To enable automatic cross-repository testing:\n\n';
-              comment += '1. Create a Personal Access Token (classic) with `repo` scope\n';
-              comment += '2. Add to repository secrets:\n';
-              comment += '   - Name: `CROSS_REPO_TOKEN`\n';
-              comment += '   - Value: Your PAT\n\n';
-              comment += 'While cross-repo testing is being configured, you can manually trigger integration tests:\n\n';
+              comment += '**Action Required:**\n';
+              comment += '1. Review API changes in this PR\n';
+              comment += '2. Manually run integration tests in OrderService repository\n';
+              comment += '3. Verify compatibility with existing integrations\n\n';
+              comment += '**Manual Testing:**\n';
               comment += '```bash\n';
               comment += 'cd OrderService\n';
               comment += 'npm test\n';
-              comment += '```\n';
+              comment += '```\n\n';
+              comment += '**Optional - Enable Automatic Testing:**\n\n';
+              comment += 'To enable automatic cross-repository testing:\n';
+              comment += '1. Create a Personal Access Token (classic) with `repo` scope\n';
+              comment += '2. Add to repository secrets:\n';
+              comment += '   - Name: `CROSS_REPO_TOKEN`\n';
+              comment += '   - Value: Your PAT\n';
             } else {
-              comment += '- Dispatch sent ✅\n';
-              comment += '- Waiting for results from dependent repositories...\n\n';
+              comment += '- Integration test dispatch sent ✅\n';
+              comment += '- Waiting for results from OrderService...\n\n';
               comment += 'Results will be posted back to this PR when tests complete.\n';
             }
 
