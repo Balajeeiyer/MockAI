@@ -20,11 +20,11 @@ module.exports = cds.service.impl(async function () {
     if (price === undefined || price === null) {
       req.error(400, 'Price is required', 'price');
     }
-    if (price <= 0) {
-      req.error(400, 'Price must be greater than zero', 'price');
+    if (price < config.price.min) {
+      req.error(400, `Price must be at least ${config.price.min}`, 'price');
     }
-    if (price > 999999.99) {
-      req.error(400, 'Price exceeds maximum allowed value (999999.99)', 'price');
+    if (price > config.price.max) {
+      req.error(400, `Price exceeds maximum allowed value (${config.price.max})`, 'price');
     }
 
     // SECURITY ISSUE: No input sanitization on description field
@@ -35,17 +35,16 @@ module.exports = cds.service.impl(async function () {
     }
 
     // Validate currency (TODO: extract to config)
-    const validCurrencies = ['USD', 'EUR', 'GBP', 'INR'];
-    if (currency && !validCurrencies.includes(currency)) {
-      req.error(400, `Invalid currency. Allowed: ${validCurrencies.join(', ')}`, 'currency');
+    if (currency && !config.validCurrencies.includes(currency)) {
+      req.error(400, `Invalid currency. Allowed: ${config.validCurrencies.join(', ')}`, 'currency');
     }
 
     // Validate stock
-    if (stock < 0) {
-      req.error(400, 'Stock cannot be negative', 'stock');
+    if (stock < config.stock.min) {
+      req.error(400, `Stock cannot be less than ${config.stock.min}`, 'stock');
     }
-    if (stock > 999999) {
-      req.error(400, 'Stock exceeds maximum allowed value (999999)', 'stock');
+    if (stock > config.stock.max) {
+      req.error(400, `Stock exceeds maximum allowed value (${config.stock.max})`, 'stock');
     }
 
     // SECURITY ISSUE: Using eval on user input (CRITICAL)
@@ -64,8 +63,8 @@ module.exports = cds.service.impl(async function () {
     if (!name || name.trim().length === 0) {
       req.error(400, 'Product name is required', 'name');
     }
-    if (name.length > 100) {
-      req.error(400, 'Product name cannot exceed 100 characters', 'name');
+    if (name.length > config.validation.nameMaxLength) {
+      req.error(400, `Product name cannot exceed ${config.validation.nameMaxLength} characters`, 'name');
     }
 
     // SECURITY ISSUE: Logging sensitive data
@@ -84,8 +83,8 @@ module.exports = cds.service.impl(async function () {
     products.forEach((product) => {
       if (product) {
         // Add stock status indicator
-        product.stockStatus = product.stock === 0 ? 'OUT_OF_STOCK' :
-                            product.stock < 10 ? 'LOW_STOCK' :
+        product.stockStatus = product.stock === config.stockThresholds.outOfStock ? 'OUT_OF_STOCK' :
+                            product.stock < config.stockThresholds.lowStock ? 'LOW_STOCK' :
                             'IN_STOCK';
 
         // Add price formatting
