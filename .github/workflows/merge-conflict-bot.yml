@@ -1,0 +1,563 @@
+name: 🚀 Hyperspace Bot - Merge Conflict Resolution
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  issues: write
+
+jobs:
+  detect-conflicts:
+    name: Detect & Resolve Merge Conflicts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch base branch
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }}
+
+      - name: Check for merge conflicts
+        id: conflict-check
+        continue-on-error: true
+        run: |
+          # Attempt merge to detect conflicts
+          git merge --no-commit --no-ff origin/${{ github.event.pull_request.base.ref }} > /tmp/merge-output.txt 2>&1 || true
+
+          # Check if there are conflicts
+          if git diff --name-only --diff-filter=U | grep -q .; then
+            echo "has_conflicts=true" >> $GITHUB_OUTPUT
+            git diff --name-only --diff-filter=U > /tmp/conflict-files.txt
+            echo "Conflicts detected in:"
+            cat /tmp/conflict-files.txt
+          else
+            echo "has_conflicts=false" >> $GITHUB_OUTPUT
+            echo "No merge conflicts detected"
+          fi
+
+          # Abort the merge
+          git merge --abort || true
+
+      - name: Analyze and resolve conflicts
+        if: steps.conflict-check.outputs.has_conflicts == 'true'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const { execSync } = require('child_process');
+
+            const prNumber = context.issue.number;
+            const baseRef = context.payload.pull_request.base.ref;
+            const headRef = context.payload.pull_request.head.ref;
+
+            // Get PR details
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+
+            const headSha = pr.head.sha;
+
+            // Delete old merge conflict bot comments
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber
+            });
+
+            for (const comment of comments) {
+              if (comment.body.includes('🔀 Merge Conflict Detection') ||
+                  comment.body.includes('⚠️ Merge Conflicts Detected')) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: comment.id
+                });
+              }
+            }
+
+            // Read conflict files
+            const conflictFiles = fs.readFileSync('/tmp/conflict-files.txt', 'utf8')
+              .split('\n')
+              .filter(f => f.trim() !== '');
+
+            if (conflictFiles.length === 0) {
+              console.log('No conflicts found');
+              return;
+            }
+
+            // Attempt merge again to get conflict content
+            try {
+              execSync(`git merge --no-commit --no-ff origin/${baseRef}`, { stdio: 'pipe' });
+            } catch (e) {
+              // Expected to fail due to conflicts
+            }
+
+            // Analyze each conflicted file
+            const conflictAnalysis = [];
+            const inlineSuggestions = [];
+
+            for (const filePath of conflictFiles) {
+              try {
+                const conflictContent = fs.readFileSync(filePath, 'utf8');
+                const lines = conflictContent.split('\n');
+
+                // Find conflict markers
+                let inConflict = false;
+                let conflictStart = -1;
+                let conflictMiddle = -1;
+                let conflictEnd = -1;
+                let currentSection = [];
+                let theirSection = [];
+
+                for (let i = 0; i < lines.length; i++) {
+                  const line = lines[i];
+
+                  if (line.startsWith('<<<<<<<')) {
+                    inConflict = true;
+                    conflictStart = i;
+                    currentSection = [];
+                  } else if (line.startsWith('=======') && inConflict) {
+                    conflictMiddle = i;
+                    theirSection = [];
+                  } else if (line.startsWith('>>>>>>>') && inConflict) {
+                    conflictEnd = i;
+                    inConflict = false;
+
+                    // Analyze this conflict section
+                    const strategy = determineResolutionStrategy(
+                      filePath,
+                      currentSection,
+                      theirSection,
+                      conflictStart
+                    );
+
+                    conflictAnalysis.push({
+                      file: filePath,
+                      startLine: conflictStart + 1,
+                      endLine: conflictEnd + 1,
+                      currentBranch: currentSection,
+                      baseBranch: theirSection,
+                      strategy: strategy
+                    });
+
+                    // Create inline suggestion
+                    const suggestion = createInlineSuggestion(
+                      filePath,
+                      conflictStart,
+                      conflictEnd,
+                      currentSection,
+                      theirSection,
+                      strategy,
+                      headSha
+                    );
+
+                    if (suggestion) {
+                      inlineSuggestions.push(suggestion);
+                    }
+                  } else if (inConflict) {
+                    if (conflictMiddle === -1) {
+                      currentSection.push(line);
+                    } else {
+                      theirSection.push(line);
+                    }
+                  }
+                }
+              } catch (error) {
+                console.log(`Error analyzing ${filePath}:`, error.message);
+              }
+            }
+
+            // Post inline suggestions
+            let suggestionsPosted = 0;
+            for (const suggestion of inlineSuggestions) {
+              try {
+                await github.rest.pulls.createReviewComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber,
+                  body: suggestion.body,
+                  commit_id: headSha,
+                  path: suggestion.path,
+                  line: suggestion.line,
+                  side: suggestion.side
+                });
+                suggestionsPosted++;
+              } catch (error) {
+                console.log(`Failed to post suggestion for ${suggestion.path}:${suggestion.line}: ${error.message}`);
+              }
+            }
+
+            // Post summary comment
+            let summaryBody = `## 🔀 Merge Conflict Detection
+
+            ### ⚠️ Conflicts Found
+
+            This PR has **${conflictFiles.length} file(s)** with merge conflicts that need resolution:
+
+            `;
+
+            for (const analysis of conflictAnalysis) {
+              summaryBody += `- **\`${analysis.file}\`** (Line ${analysis.startLine})\n`;
+              summaryBody += `  - Strategy: ${analysis.strategy.name}\n`;
+              summaryBody += `  - ${analysis.strategy.description}\n\n`;
+            }
+
+            if (suggestionsPosted > 0) {
+              summaryBody += `
+            ### 📍 Inline Resolution Suggestions
+
+            I've added **${suggestionsPosted} inline suggestion(s)** to help resolve these conflicts:
+
+            **To view**: Go to the **Files changed** tab and look for 💬 comment icons on conflicted files.
+            **To apply**: Review each suggestion and click **"Commit suggestion"** to accept the resolution.
+
+            `;
+            } else {
+              summaryBody += `
+            ### ℹ️ Manual Resolution Required
+
+            The conflicts in this PR require manual review and resolution.
+
+            `;
+            }
+
+            summaryBody += `
+            ### 🔧 How to Resolve Locally
+
+            If you prefer to resolve conflicts locally:
+
+            \`\`\`bash
+            # Fetch latest changes
+            git fetch origin ${baseRef}
+
+            # Merge base branch into your branch
+            git merge origin/${baseRef}
+
+            # Resolve conflicts in your editor
+            # Then stage and commit
+            git add .
+            git commit -m "fix: resolve merge conflicts with ${baseRef}"
+            git push
+            \`\`\`
+
+            ### 📚 Resources
+
+            - [GitHub: Resolving merge conflicts](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts)
+            - [Git merge conflict resolution](https://git-scm.com/book/en/v2/Git-Branching-Basic-Branching-and-Merging)
+
+            ---
+
+            *🤖 Merge conflicts detected • Review inline suggestions in Files changed tab*
+            `;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: summaryBody
+            });
+
+            // Add label
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                labels: ['merge-conflict', 'needs-resolution']
+              });
+            } catch (error) {
+              console.log('Error adding labels:', error.message);
+            }
+
+            // Helper function to determine resolution strategy
+            function determineResolutionStrategy(filePath, currentLines, baseLines, lineNum) {
+              // Analyze the conflict to suggest a strategy
+              const currentCode = currentLines.join('\n').trim();
+              const baseCode = baseLines.join('\n').trim();
+
+              // Check if it's a package-lock.json or similar
+              if (filePath.includes('package-lock.json') ||
+                  filePath.includes('yarn.lock') ||
+                  filePath.includes('pnpm-lock.yaml')) {
+                return {
+                  name: 'Regenerate lock file',
+                  description: 'Delete lock file and regenerate',
+                  resolution: 'regenerate'
+                };
+              }
+
+              // Check if both sides made identical changes
+              if (currentCode === baseCode) {
+                return {
+                  name: 'Accept either (identical)',
+                  description: 'Both branches made the same change',
+                  resolution: 'accept-current'
+                };
+              }
+
+              // Check if one side is empty (deletion)
+              if (currentCode === '' && baseCode !== '') {
+                return {
+                  name: 'Keep base version',
+                  description: 'Your branch deleted this, base branch modified it',
+                  resolution: 'accept-base'
+                };
+              }
+
+              if (baseCode === '' && currentCode !== '') {
+                return {
+                  name: 'Keep your changes',
+                  description: 'Base branch deleted this, you modified it',
+                  resolution: 'accept-current'
+                };
+              }
+
+              // Check if it's import/dependency related
+              if (currentCode.includes('import') || currentCode.includes('require') ||
+                  baseCode.includes('import') || baseCode.includes('require')) {
+                return {
+                  name: 'Merge both imports',
+                  description: 'Combine imports from both branches',
+                  resolution: 'merge-both'
+                };
+              }
+
+              // Check if it's version numbers
+              if (filePath.includes('package.json') &&
+                  (currentCode.includes('version') || baseCode.includes('version'))) {
+                return {
+                  name: 'Use newer version',
+                  description: 'Keep the higher version number',
+                  resolution: 'use-newer'
+                };
+              }
+
+              // Default: manual review needed
+              return {
+                name: 'Manual review required',
+                description: 'Both branches modified the same code - needs careful review',
+                resolution: 'manual'
+              };
+            }
+
+            // Helper function to create inline suggestion
+            function createInlineSuggestion(filePath, startLine, endLine, currentLines, baseLines, strategy, commitId) {
+              let resolvedContent = '';
+              let suggestionBody = '';
+
+              if (strategy.resolution === 'accept-current') {
+                resolvedContent = currentLines.join('\n');
+                suggestionBody = [
+                  '**🔀 MERGE CONFLICT: Accept Your Changes**',
+                  '',
+                  '**Resolution Strategy**: Keep changes from your branch',
+                  '',
+                  '**Your changes**:',
+                  '```javascript',
+                  currentLines.slice(0, 10).join('\n') + (currentLines.length > 10 ? '\n...' : ''),
+                  '```',
+                  '',
+                  '**Base branch changes**:',
+                  '```javascript',
+                  baseLines.slice(0, 10).join('\n') + (baseLines.length > 10 ? '\n...' : ''),
+                  '```',
+                  '',
+                  '**Suggested resolution**:',
+                  '```suggestion',
+                  resolvedContent,
+                  '```',
+                  '',
+                  '**Why this resolution?** Your changes appear to be the intended modification.',
+                  '',
+                  '_Click "Commit suggestion" to accept this resolution._'
+                ].join('\n');
+
+              } else if (strategy.resolution === 'accept-base') {
+                resolvedContent = baseLines.join('\n');
+                suggestionBody = [
+                  '**🔀 MERGE CONFLICT: Accept Base Branch Changes**',
+                  '',
+                  '**Resolution Strategy**: Keep changes from base branch',
+                  '',
+                  '**Your changes**:',
+                  '```javascript',
+                  currentLines.slice(0, 10).join('\n') + (currentLines.length > 10 ? '\n...' : ''),
+                  '```',
+                  '',
+                  '**Base branch changes**:',
+                  '```javascript',
+                  baseLines.slice(0, 10).join('\n') + (baseLines.length > 10 ? '\n...' : ''),
+                  '```',
+                  '',
+                  '**Suggested resolution**:',
+                  '```suggestion',
+                  resolvedContent,
+                  '```',
+                  '',
+                  '**Why this resolution?** Base branch changes should take precedence.',
+                  '',
+                  '_Click "Commit suggestion" to accept this resolution._'
+                ].join('\n');
+
+              } else if (strategy.resolution === 'merge-both') {
+                // Merge both sections
+                const merged = [...new Set([...currentLines, ...baseLines])];
+                resolvedContent = merged.join('\n');
+                suggestionBody = [
+                  '**🔀 MERGE CONFLICT: Merge Both Changes**',
+                  '',
+                  '**Resolution Strategy**: Combine changes from both branches',
+                  '',
+                  '**Suggested resolution** (merged):',
+                  '```suggestion',
+                  resolvedContent,
+                  '```',
+                  '',
+                  '**Why this resolution?** Both sets of changes can coexist.',
+                  '',
+                  '_Click "Commit suggestion" to accept this resolution._'
+                ].join('\n');
+
+              } else if (strategy.resolution === 'regenerate') {
+                suggestionBody = [
+                  '**🔀 MERGE CONFLICT: Lock File Conflict**',
+                  '',
+                  '**Resolution Strategy**: Regenerate lock file',
+                  '',
+                  '**Recommended action**:',
+                  '```bash',
+                  'rm package-lock.json',
+                  'npm install',
+                  'git add package-lock.json',
+                  'git commit -m "fix: regenerate package-lock.json"',
+                  '```',
+                  '',
+                  '**Why?** Lock files should be regenerated rather than manually merged.',
+                  '',
+                  '_This requires manual resolution - follow the commands above._'
+                ].join('\n');
+
+                // No inline suggestion for regenerate strategy
+                return {
+                  path: filePath,
+                  line: startLine + 1,
+                  side: 'RIGHT',
+                  body: suggestionBody
+                };
+
+              } else {
+                // Manual review needed
+                suggestionBody = [
+                  '**🔀 MERGE CONFLICT: Manual Review Required**',
+                  '',
+                  '**Resolution Strategy**: Careful manual review needed',
+                  '',
+                  '**Your changes**:',
+                  '```javascript',
+                  currentLines.slice(0, 10).join('\n') + (currentLines.length > 10 ? '\n...' : ''),
+                  '```',
+                  '',
+                  '**Base branch changes**:',
+                  '```javascript',
+                  baseLines.slice(0, 10).join('\n') + (baseLines.length > 10 ? '\n...' : ''),
+                  '```',
+                  '',
+                  '**Options**:',
+                  '1. Keep your changes (current branch)',
+                  '2. Keep base branch changes',
+                  '3. Merge both changes manually',
+                  '4. Write entirely new resolution',
+                  '',
+                  '**Why manual review?** Both branches made substantial changes that require human judgment.',
+                  '',
+                  '_Resolve this conflict in your editor and push the changes._'
+                ].join('\n');
+
+                return {
+                  path: filePath,
+                  line: startLine + 1,
+                  side: 'RIGHT',
+                  body: suggestionBody
+                };
+              }
+
+              // Return suggestion with resolved content
+              return {
+                path: filePath,
+                line: startLine + 1,
+                side: 'RIGHT',
+                body: suggestionBody
+              };
+            }
+
+      - name: No conflicts detected
+        if: steps.conflict-check.outputs.has_conflicts == 'false'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.issue.number;
+
+            // Delete old conflict bot comments
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber
+            });
+
+            for (const comment of comments) {
+              if (comment.body.includes('🔀 Merge Conflict Detection') ||
+                  comment.body.includes('⚠️ Merge Conflicts Detected')) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: comment.id
+                });
+              }
+            }
+
+            // Remove conflict labels if present
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                name: 'merge-conflict'
+              });
+            } catch (error) {
+              // Label might not exist
+            }
+
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                name: 'needs-resolution'
+              });
+            } catch (error) {
+              // Label might not exist
+            }
+
+            console.log('✅ No merge conflicts detected');
