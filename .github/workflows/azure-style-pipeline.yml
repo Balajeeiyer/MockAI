@@ -196,7 +196,7 @@ jobs:
             const allSuggestions = [
               {
                 path: 'srv/product-service.js',
-                line: 35,
+                line: 32,
                 side: 'RIGHT',
                 body: [
                   '**🟠 HIGH: Cross-Site Scripting (XSS) Vulnerability (CWE-79)**',
@@ -207,12 +207,15 @@ jobs:
                   '',
                   '**Suggested Fix**:',
                   '```suggestion',
+                  '    // TODO: Add proper input sanitization to prevent XSS vulnerabilities',
+                  '    if (description) {',
                   '      // Sanitize user input to prevent XSS',
                   '      const sanitize = (str) => String(str || \'\')',
                   '        .replace(/[<>"\'&]/g, \'\')',
                   '        .trim()',
                   '        .substring(0, 500);',
                   '      req.data.description = sanitize(description);',
+                  '    }',
                   '```',
                   '',
                   '📚 **References**:',
@@ -224,33 +227,37 @@ jobs:
               },
               {
                 path: 'srv/product-service.js',
-                line: 54,
+                line: 52,
                 side: 'RIGHT',
                 body: [
-                  '**🔴 CRITICAL: Potential Code Injection Risk (CWE-94)**',
+                  '**🔴 CRITICAL: Code Injection via eval() (CWE-94)**',
                   '',
-                  'Processing user input without proper validation could be risky.',
+                  'Using eval() on user input allows arbitrary code execution - extremely dangerous!',
                   '',
-                  '**Severity**: HIGH (CVSS 7.5)',
+                  '**Severity**: CRITICAL (CVSS 9.8)',
                   '',
                   '**Suggested Fix**:',
                   '```suggestion',
-                  '      // Validate and sanitize name input',
+                  '    // TODO: Remove eval() and use proper string validation',
+                  '    if (name) {',
+                  '      // Validate and sanitize name input without eval',
                   '      const processedName = String(name)',
                   '        .trim()',
-                  '        .replace(/[<>\"\'`]/g, \'\')',
+                  '        .replace(/[<>"\'`]/g, \'\')',
                   '        .substring(0, 100);',
                   '      ',
                   '      if (processedName.length === 0) {',
                   '        req.error(400, \'Product name cannot be empty\');',
                   '      }',
+                  '      req.data.name = processedName;',
+                  '    }',
                   '```',
                   '',
                   '📚 **References**:',
                   '- [CWE-94](https://cwe.mitre.org/data/definitions/94.html)',
                   '- [Input Validation](https://cheatsheetseries.owasp.org/cheatsheets/Input_Validation_Cheat_Sheet.html)',
                   '',
-                  '**Impact**: Ensure user input is properly validated and sanitized.',
+                  '**Impact**: Attacker can execute arbitrary code on the server, leading to complete system compromise.',
                 ].join('\n')
               }
             ];
@@ -290,8 +297,8 @@ jobs:
             if (inlineSuggestionsPosted > 0) {
               summaryBody += `### 📍 Inline Suggestions
 I've added ${inlineSuggestionsPosted} inline code suggestion(s) directly on the affected lines:
-- \`srv/product-service.js:35\` - XSS vulnerability fix
-- \`srv/product-service.js:54\` - Input validation fix
+- \`srv/product-service.js:32\` - XSS vulnerability fix
+- \`srv/product-service.js:52\` - Critical eval() code injection fix
 
 **To view**: Go to the **Files changed** tab and look for the 💬 comment icons.
 **To apply**: Click the **"Commit suggestion"** button on any suggestion.
@@ -302,8 +309,8 @@ I've added ${inlineSuggestionsPosted} inline code suggestion(s) directly on the 
 Security issues detected but inline suggestions can only be posted on files changed in this PR.
 
 **Issues found in**:
-- \`srv/product-service.js:35\` - XSS vulnerability (sanitize description input)
-- \`srv/product-service.js:54\` - Input validation (sanitize name input)
+- \`srv/product-service.js:32\` - XSS vulnerability (sanitize description input)
+- \`srv/product-service.js:52\` - Critical code injection via eval()
 
 **To fix**: Modify these files in your PR to see inline commit suggestions.
 

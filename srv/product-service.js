@@ -30,6 +30,7 @@ module.exports = cds.service.impl(async function () {
 
     // SECURITY ISSUE: No input sanitization on description field
     // This could lead to XSS or injection attacks
+    // TODO: Add proper input sanitization to prevent XSS vulnerabilities
     if (description) {
       // Directly using user input without sanitization
       req.data.description = description;
@@ -50,6 +51,7 @@ module.exports = cds.service.impl(async function () {
 
     // SECURITY ISSUE: Using eval on user input (CRITICAL)
     // This is extremely dangerous and allows code execution
+    // TODO: Remove eval() and use proper string validation
     if (name) {
       try {
         // Don't do this! This is a security vulnerability
