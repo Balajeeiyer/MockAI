@@ -1,4 +1,4 @@
-name: 🚀 Hyperspace Bot - AI PR Analysis
+name: 🚀 PRo - PR Optimiser (AI Analysis)
 
 on:
   pull_request:
@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   hyperspace-analysis:
-    name: Hyperspace Bot Analysis
+    name: PRo Analysis Engine
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -478,21 +478,21 @@ jobs:
 
             // Build the consolidated review comment
             const reviewBody = [
-              '## 🚨 Security Audit Failed - Critical Vulnerabilities Detected',
+              '## 🚀 PRo - PR Optimiser Analysis Report',
               '',
-              '**Status**: ❌ **FAILED** - Immediate action required',
+              '**Status**: ⚠️ **Security Issues Detected** - Review required',
               '',
-              'This PR contains **9 security vulnerabilities** including 5 CRITICAL and 2 HIGH severity issues that must be addressed before merging.',
+              'This PR contains **9 security vulnerabilities** including 5 CRITICAL and 2 HIGH severity issues that should be addressed.',
               '',
               summary,
               '',
               '<details>',
-              '<summary>PR Bot Information</summary>',
+              '<summary>PRo Bot Information</summary>',
               '',
-              '**Version:** `1.0.0` | 📖 [Documentation](https://github.com/Balajeeiyer/MockAI/blob/main/.github/HYPERSPACE_BOT.md) | 💬 [Feedback](https://github.com/Balajeeiyer/MockAI/issues)',
+              '**Version:** `1.0.0` | 📖 [Documentation](https://github.com/Balajeeiyer/MockAI/blob/main/.github/PRO_BOT.md) | 💬 [Feedback](https://github.com/Balajeeiyer/MockAI/issues)',
               '',
               '- Event Trigger: `pull_request.' + context.payload.action + '`',
-              '- LLM: `anthropic--claude-4.6-sonnet`',
+              '- Analysis Engine: `anthropic--claude-4.6-sonnet`',
               '- Correlation ID: `' + correlationId + '`',
               '- Files Changed: ' + fileCount,
               '- Lines: +' + additions + ' / -' + deletions,
@@ -535,7 +535,7 @@ jobs:
               '',
               '---',
               '',
-              '*🚨 Security audit failed. View inline commit suggestions in the **Files changed** tab to fix each vulnerability. Each suggestion can be committed directly with one click!*'
+              '*🤖 PRo analysis complete. View inline commit suggestions in the **Files changed** tab to fix each vulnerability. Each suggestion can be committed directly with one click!*'
             ].join('\n');
 
             // Delete old comments from previous runs
@@ -546,7 +546,7 @@ jobs:
             });
 
             for (const comment of comments) {
-              if (comment.body.includes('🚀 Hyperspace Bot Analysis Report') ||
+              if (comment.body.includes('🚀 PRo Analysis Report') ||
                   comment.body.includes('📊 Code Quality & Security Summary')) {
                 await github.rest.issues.deleteComment({
                   owner: context.repo.owner,
@@ -575,7 +575,7 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 labels: [
-                  'hyperspace-analyzed',
+                  'pro-analyzed',
                   'code-quality-review',
                   'security-review',
                   'build-check',
@@ -628,8 +628,8 @@ jobs:
                 repo: context.repo.repo,
                 sha: context.payload.pull_request.head.sha,
                 state: 'failure',
-                context: 'Hyperspace Bot / Code Analysis',
-                description: 'Changes required - see PR comments',
+                context: 'PRo - PR Optimiser / Code Analysis',
+                description: 'Changes suggested - see PR comments',
                 target_url: 'https://github.com/' + context.repo.owner + '/' + context.repo.repo + '/pull/' + context.issue.number
               });
             } catch (error) {

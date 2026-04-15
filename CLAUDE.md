@@ -144,13 +144,13 @@ this.on('updateStock', Products, async (req) => { /* custom action */ });
 
 ## AI-Powered PR Reviews
 
-This repository uses **Hyperspace Bot** for automated PR analysis:
+This repository uses **PRo (PR Optimiser)** for automated PR analysis:
 
 - Runs on PR creation/update automatically
 - Provides multi-agent analysis (security, quality, standards)
 - Generates detailed comments with file locations, line numbers, and specific fixes
-- Adds labels: `hyperspace-analyzed`, `ready-to-merge`, `needs-fixes`, `security-review`
-- See `.github/HYPERSPACE_BOT.md` for details
+- Adds labels: `pro-analyzed`, `ready-to-merge`, `needs-fixes`, `security-review`
+- See `.github/PRO_BOT.md` for details
 
 ## Database
 
@@ -187,4 +187,4 @@ This repository uses **Hyperspace Bot** for automated PR analysis:
 - `srv/product-service.js`: Business logic implementation
 - `app/products/manifest.json`: UI5 app configuration
 - `package.json`: Dependencies and CAP configuration
-- `.github/workflows/hyperspace-bot.yml`: PR automation workflow
+- `.github/workflows/pro-bot.yml`: PR automation workflow
