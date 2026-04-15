@@ -997,17 +997,10 @@ jobs:
               comment += '- Est. ' + (repo.estimated_duration / 60) + ' min\n';
             }
 
-            comment += '\n### What happens next?\n\n';
-            comment += '1. Integration tests will run in each dependent repository\n';
-            comment += '2. Results will appear as **GitHub Checks** on this PR\n';
-            comment += '3. Any failures will be reported with detailed logs\n';
-            comment += '4. All tests must pass before this PR can be merged\n\n';
-            comment += '### Test Coverage\n\n';
-            comment += '- Schema validation (OData $metadata compatibility)\n';
-            comment += '- Integration tests (CRUD operations)\n';
-            comment += '- Performance benchmarks (response time thresholds)\n\n';
+            comment += '\n### 📬 Notification\n\n';
+            comment += `@${context.repo.owner} - API changes detected in this PR. Please review.\n\n`;
             comment += '---\n';
-            comment += '*Automated cross-repository testing • [View configuration](.github/dependent-repos.yml)*\n';
+            comment += '*API changes detected • Code owner notified*\n';
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
