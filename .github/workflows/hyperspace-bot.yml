@@ -894,13 +894,44 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const yaml = require('js-yaml');
 
-            // Read dependent-repos.yml
+            // Read dependent-repos.yml and parse manually (simple parser for our use case)
             const configContent = fs.readFileSync('.github/dependent-repos.yml', 'utf8');
-            const config = yaml.load(configContent);
 
-            return config.dependent_repos || [];
+            // Extract dependent repos from YAML manually
+            const dependentRepos = [];
+
+            // Simple YAML parsing for our specific structure
+            const lines = configContent.split('\n');
+            let currentRepo = null;
+
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i].trim();
+
+              if (line.startsWith('- name:')) {
+                if (currentRepo) {
+                  dependentRepos.push(currentRepo);
+                }
+                currentRepo = {
+                  name: line.replace('- name:', '').trim(),
+                  critical: false,
+                  estimated_duration: 300
+                };
+              } else if (currentRepo && line.startsWith('repository:')) {
+                currentRepo.repository = line.replace('repository:', '').trim();
+              } else if (currentRepo && line.startsWith('critical:')) {
+                currentRepo.critical = line.replace('critical:', '').trim() === 'true';
+              } else if (currentRepo && line.startsWith('estimated_duration:')) {
+                currentRepo.estimated_duration = parseInt(line.replace('estimated_duration:', '').trim());
+              }
+            }
+
+            if (currentRepo) {
+              dependentRepos.push(currentRepo);
+            }
+
+            console.log('Found dependent repos:', JSON.stringify(dependentRepos, null, 2));
+            return dependentRepos;
 
       - name: Dispatch integration tests
         if: steps.api-changes.outputs.has_api_changes == 'true'
