@@ -21,6 +21,11 @@ service ProductService @(path: '/products') {
      * Activate/Deactivate product
      */
     action toggleActive() returns Products;
+
+    /**
+     * Update product rating
+     */
+    action updateRating(rating : Decimal(3, 2)) returns Products;
   };
 
   /**

@@ -168,6 +168,51 @@ module.exports = cds.service.impl(async function () {
   });
 
   /**
+   * Custom action: Update Rating
+   * Updates product rating with validation
+   */
+  this.on('updateRating', Products, async (req) => {
+    const { ID } = req.params[0];
+    const { rating } = req.data;
+
+    try {
+      const product = await SELECT.one.from(Products).where({ ID });
+
+      if (!product) {
+        return req.error(404, `Product ${ID} not found`);
+      }
+
+      // Validate rating range
+      if (rating < config.rating.min || rating > config.rating.max) {
+        return req.error(400, `Rating must be between ${config.rating.min} and ${config.rating.max}`, 'rating');
+      }
+
+      // Calculate new average rating
+      const currentTotal = product.rating * product.reviewCount;
+      const newReviewCount = product.reviewCount + 1;
+      const newRating = ((currentTotal + rating) / newReviewCount).toFixed(2);
+
+      await UPDATE(Products).set({
+        rating: parseFloat(newRating),
+        reviewCount: newReviewCount
+      }).where({ ID });
+
+      LOG.info('Product rating updated', {
+        productId: ID,
+        productName: product.name,
+        oldRating: product.rating,
+        newRating,
+        reviewCount: newReviewCount
+      });
+
+      return await SELECT.one.from(Products).where({ ID });
+    } catch (error) {
+      LOG.error('Failed to update rating', { ID, rating, error: error.message });
+      return req.error(500, 'Failed to update product rating');
+    }
+  });
+
+  /**
    * Custom function: Get Low Stock Products
    * Returns products with stock below threshold
    */
