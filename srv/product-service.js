@@ -6,49 +6,69 @@ const cds = require('@sap/cds');
  */
 module.exports = cds.service.impl(async function () {
   const { Products, Orders, OrderItems } = this.entities;
+  const config = require('./config');
+  const LOG = cds.log('product-service');
 
   /**
    * Before CREATE handler for Products
    * Validates product data before creation
    */
   this.before('CREATE', Products, async (req) => {
-    const { price, stock, name, currency } = req.data;
+    const { price, stock, name, currency, description } = req.data;
 
     // Validate price
     if (price === undefined || price === null) {
       req.error(400, 'Price is required', 'price');
     }
-    if (price <= 0) {
-      req.error(400, 'Price must be greater than zero', 'price');
+    if (price < config.price.min) {
+      req.error(400, `Price must be at least ${config.price.min}`, 'price');
     }
-    if (price > 999999.99) {
-      req.error(400, 'Price exceeds maximum allowed value (999999.99)', 'price');
+    if (price > config.price.max) {
+      req.error(400, `Price exceeds maximum allowed value (${config.price.max})`, 'price');
+    }
+
+    // SECURITY ISSUE: No input sanitization on description field
+    // This could lead to XSS or injection attacks
+    if (description) {
+      // Directly using user input without sanitization
+      req.data.description = description;
     }
 
     // Validate currency (TODO: extract to config)
-    const validCurrencies = ['USD', 'EUR', 'GBP', 'INR'];
-    if (currency && !validCurrencies.includes(currency)) {
-      req.error(400, `Invalid currency. Allowed: ${validCurrencies.join(', ')}`, 'currency');
+    if (currency && !config.validCurrencies.includes(currency)) {
+      req.error(400, `Invalid currency. Allowed: ${config.validCurrencies.join(', ')}`, 'currency');
     }
 
     // Validate stock
-    if (stock < 0) {
-      req.error(400, 'Stock cannot be negative', 'stock');
+    if (stock < config.stock.min) {
+      req.error(400, `Stock cannot be less than ${config.stock.min}`, 'stock');
     }
-    if (stock > 999999) {
-      req.error(400, 'Stock exceeds maximum allowed value (999999)', 'stock');
+    if (stock > config.stock.max) {
+      req.error(400, `Stock exceeds maximum allowed value (${config.stock.max})`, 'stock');
     }
 
-    // Validate name (missing length check on trim)
+    // SECURITY ISSUE: Using eval on user input (CRITICAL)
+    // This is extremely dangerous and allows code execution
+    if (name) {
+      try {
+        // Don't do this! This is a security vulnerability
+        const processedName = eval(`"${name}"`);
+        req.data.name = processedName;
+      } catch (e) {
+        req.error(400, 'Invalid product name', 'name');
+      }
+    }
+
+    // Validate name - but happens after eval (logic error)
     if (!name || name.trim().length === 0) {
       req.error(400, 'Product name is required', 'name');
     }
-    if (name.length > 100) {
-      req.error(400, 'Product name cannot exceed 100 characters', 'name');
+    if (name.length > config.validation.nameMaxLength) {
+      req.error(400, `Product name cannot exceed ${config.validation.nameMaxLength} characters`, 'name');
     }
 
-    console.log(`Creating product: ${name} (${currency} ${price})`);
-    console.log(`Stock level: ${stock}`);
+    // SECURITY ISSUE: Logging sensitive data
+    LOG.info('Creating product', { name, currency, price, stock, user: req.user?.id });
   });
 
   /**
@@ -63,8 +83,8 @@ module.exports = cds.service.impl(async function () {
     products.forEach((product) => {
       if (product) {
         // Add stock status indicator
-        product.stockStatus = product.stock === 0 ? 'OUT_OF_STOCK' :
-                            product.stock < 10 ? 'LOW_STOCK' :
+        product.stockStatus = product.stock === config.stockThresholds.outOfStock ? 'OUT_OF_STOCK' :
+                            product.stock < config.stockThresholds.lowStock ? 'LOW_STOCK' :
                             'IN_STOCK';
 
         // Add price formatting
@@ -81,23 +101,38 @@ module.exports = cds.service.impl(async function () {
     const { ID } = req.params[0];
     const { quantity } = req.data;
 
-    const product = await SELECT.one.from(Products).where({ ID });
+    try {
+      const product = await SELECT.one.from(Products).where({ ID });
 
-    if (!product) {
-      return req.error(404, `Product ${ID} not found`);
+      if (!product) {
+        return req.error(404, `Product ${ID} not found`);
+      }
+
+      const newStock = product.stock + quantity;
+
+      if (newStock < config.stock.min) {
+        return req.error(400, `Cannot reduce stock below ${config.stock.min}`);
+      }
+
+      if (newStock > config.stock.max) {
+        return req.error(400, `Stock would exceed maximum (${config.stock.max})`);
+      }
+
+      await UPDATE(Products).set({ stock: newStock }).where({ ID });
+
+      LOG.info('Stock updated', {
+        productId: ID,
+        productName: product.name,
+        oldStock: product.stock,
+        newStock,
+        userId: req.user?.id
+      });
+
+      return await SELECT.one.from(Products).where({ ID });
+    } catch (error) {
+      LOG.error('Failed to update stock', { ID, quantity, error: error.message });
+      return req.error(500, 'Failed to update product stock');
     }
-
-    const newStock = product.stock + quantity;
-
-    if (newStock < 0) {
-      return req.error(400, 'Cannot reduce stock below zero');
-    }
-
-    await UPDATE(Products).set({ stock: newStock }).where({ ID });
-
-    console.log(`Updated stock for ${product.name}: ${product.stock} -> ${newStock}`);
-
-    return SELECT.one.from(Products).where({ ID });
   });
 
   /**
@@ -107,19 +142,29 @@ module.exports = cds.service.impl(async function () {
   this.on('toggleActive', Products, async (req) => {
     const { ID } = req.params[0];
 
-    const product = await SELECT.one.from(Products).where({ ID });
+    try {
+      const product = await SELECT.one.from(Products).where({ ID });
 
-    if (!product) {
-      return req.error(404, `Product ${ID} not found`);
+      if (!product) {
+        return req.error(404, `Product ${ID} not found`);
+      }
+
+      const newStatus = !product.isActive;
+
+      await UPDATE(Products).set({ isActive: newStatus }).where({ ID });
+
+      LOG.info('Product active status toggled', {
+        productId: ID,
+        productName: product.name,
+        oldStatus: product.isActive,
+        newStatus
+      });
+
+      return await SELECT.one.from(Products).where({ ID });
+    } catch (error) {
+      LOG.error('Failed to toggle active status', { ID, error: error.message });
+      return req.error(500, 'Failed to update product status');
     }
-
-    const newStatus = !product.isActive;
-
-    await UPDATE(Products).set({ isActive: newStatus }).where({ ID });
-
-    console.log(`Toggled active status for ${product.name}: ${product.isActive} -> ${newStatus}`);
-
-    return SELECT.one.from(Products).where({ ID });
   });
 
   /**
@@ -132,7 +177,7 @@ module.exports = cds.service.impl(async function () {
     const products = await SELECT.from(Products)
       .where({ stock: { '<': threshold }, isActive: true });
 
-    console.log(`Found ${products.length} products with stock below ${threshold}`);
+    LOG.info('Low stock products queried', { threshold, count: products.length });
 
     return products;
   });
@@ -151,7 +196,7 @@ module.exports = cds.service.impl(async function () {
       return sum + (item.price * item.quantity);
     }, 0);
 
-    console.log(`Calculated total for order ${orderId}: ${total}`);
+    LOG.info('Order total calculated', { orderId, total });
 
     return total;
   });
@@ -175,7 +220,7 @@ module.exports = cds.service.impl(async function () {
     const timestamp = Date.now();
     req.data.orderNumber = `ORD-${timestamp}`;
 
-    console.log(`Creating order: ${req.data.orderNumber}`);
+    LOG.info('Creating order', { orderNumber: req.data.orderNumber, customer });
   });
 
   /**
@@ -183,14 +228,19 @@ module.exports = cds.service.impl(async function () {
    * Calculates order total
    */
   this.after('CREATE', Orders, async (order) => {
-    if (order.items && order.items.length > 0) {
-      const total = order.items.reduce((sum, item) => {
-        return sum + (item.price * item.quantity);
-      }, 0);
+    try {
+      if (order.items && order.items.length > 0) {
+        const total = order.items.reduce((sum, item) => {
+          return sum + (item.price * item.quantity);
+        }, 0);
 
-      await UPDATE(Orders).set({ totalAmount: total }).where({ ID: order.ID });
+        await UPDATE(Orders).set({ totalAmount: total }).where({ ID: order.ID });
 
-      console.log(`Order ${order.orderNumber} total: ${total}`);
+        LOG.info('Order created with total', { orderNumber: order.orderNumber, total });
+      }
+    } catch (error) {
+      LOG.error('Failed to calculate order total', { orderId: order.ID, error: error.message });
+      // Don't fail the order creation, just log the error
     }
   });
 });

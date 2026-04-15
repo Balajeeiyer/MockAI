@@ -1,0 +1,37 @@
+version: '1.0'
+
+settings:
+  # Global timeout for integration tests (milliseconds)
+  timeout: 600000  # 10 minutes
+
+  # Run tests in parallel or sequential
+  parallel: true
+
+  # Percentage threshold for test warnings
+  warning_threshold: 95
+
+dependent_repos:
+  - name: OrderService
+    repository: Balajeeiyer/order-service
+    branch: main
+    code_owners:
+      - '@Balajeeiyer'
+
+    dependencies:
+      - service: MockAI Products API
+        endpoints:
+          - GET /products/Products
+          - GET /products/Products({ID})
+          - POST /products/Products
+          - PATCH /products/Products({ID})
+          - DELETE /products/Products({ID})
+
+    estimated_duration: 300  # 5 minutes
+    critical: true
+
+notifications:
+  create_issues: true
+  issue_labels:
+    - integration-test-failure
+    - cross-repo
+  issue_title_template: '[Integration Test] Failure in {{repo}} due to {{source_pr}}'
