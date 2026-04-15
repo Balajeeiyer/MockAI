@@ -28,7 +28,7 @@ module.exports = cds.service.impl(async function () {
     }
 
     // SECURITY ISSUE: No input sanitization on description field
-    // This could lead to XSS or injection attacks
+    // This could lead to XSS or injection attacks test
     if (description) {
       // Directly using user input without sanitization
       req.data.description = description;
