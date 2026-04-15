@@ -51,410 +51,6 @@ jobs:
 
             return files;
 
-      - name: Post Inline Code Suggestions
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const prNumber = context.issue.number;
-            const headSha = '${{ steps.pr-files.outputs.head_sha }}';
-
-            // Define suggestions for specific lines
-            const suggestions = [
-              {
-                path: 'srv/product-service.js',
-                line: 30,
-                side: 'RIGHT',
-                body: [
-                  '**🔴 CRITICAL SECURITY**: XSS Vulnerability - No input sanitization on description field',
-                  '',
-                  '**Severity**: HIGH | **CVSS**: 7.5',
-                  '',
-                  'The description field accepts user input without sanitization, allowing potential XSS attacks or injection of malicious content.',
-                  '',
-                  '**Fix**: Sanitize input before processing:',
-                  '````suggestion',
-                  '    // SECURITY FIX: Sanitize description input to prevent XSS',
-                  '    if (description) {',
-                  '      // Remove HTML tags and dangerous characters',
-                  '      const sanitizedDescription = String(description)',
-                  '        .trim()',
-                  '        .replace(/[<>]/g, \'\')',
-                  '        .substring(0, 500);',
-                  '      req.data.description = sanitizedDescription;',
-                  '    }',
-                  '````',
-                  '',
-                  '**Implementation Time**: 5 minutes',
-                  '',
-                  '_Commit this suggestion directly to fix the security vulnerability._',
-                  '<!-- PR-Bot Feedback-Section-Start -->',
-                  '---',
-                  '_Please provide feedback on the review comment by checking the appropriate box:_',
-                  '',
-                  '- [ ] <!-- PR-Bot Feedback Awesome --> 🌟 Awesome comment, a human might have missed that.',
-                  '- [ ] <!-- PR-Bot Feedback Helpful --> ✅ Helpful comment',
-                  '- [ ] <!-- PR-Bot Feedback Neutral --> 🤷 Neutral',
-                  '- [ ] <!-- PR-Bot Feedback Not helpful --> ❌ This comment is not helpful<!-- PR-Bot Feedback-Section-End -->'
-                ].join('\n')
-              },
-              {
-                path: 'srv/product-service.js',
-                line: 51,
-                side: 'RIGHT',
-                body: [
-                  '**🔴 CRITICAL SECURITY**: Code Injection via eval() - Remote Code Execution Risk',
-                  '',
-                  '**Severity**: CRITICAL | **CVSS**: 9.8 | **CWE-94**',
-                  '',
-                  'Using `eval()` on user input is extremely dangerous and allows arbitrary code execution. An attacker could inject malicious code through the product name field.',
-                  '',
-                  '**Attack Example**: `"; require(\'child_process\').exec(\'rm -rf /\'); "`',
-                  '',
-                  '**Fix**: Remove eval() and use proper string validation:',
-                  '````suggestion',
-                  '    // SECURITY FIX: Removed eval() - validate name without code execution',
-                  '    if (name) {',
-                  '      // Validate name contains only safe characters',
-                  '      const sanitizedName = String(name)',
-                  '        .trim()',
-                  '        .replace(/[<>\"\'`]/g, \'\')',
-                  '        .substring(0, 100);',
-                  '      req.data.name = sanitizedName;',
-                  '    }',
-                  '````',
-                  '',
-                  '**Implementation Time**: 3 minutes',
-                  '**Priority**: IMMEDIATE - This is a critical vulnerability',
-                  '',
-                  '_Commit this suggestion immediately to prevent code injection attacks._',
-                  '<!-- PR-Bot Feedback-Section-Start -->',
-                  '---',
-                  '_Please provide feedback on the review comment by checking the appropriate box:_',
-                  '',
-                  '- [ ] <!-- PR-Bot Feedback Awesome --> 🌟 Awesome comment, a human might have missed that.',
-                  '- [ ] <!-- PR-Bot Feedback Helpful --> ✅ Helpful comment',
-                  '- [ ] <!-- PR-Bot Feedback Neutral --> 🤷 Neutral',
-                  '- [ ] <!-- PR-Bot Feedback Not helpful --> ❌ This comment is not helpful<!-- PR-Bot Feedback-Section-End -->'
-                ].join('\n')
-              },
-              {
-                path: 'srv/product-service.js',
-                line: 120,
-                side: 'RIGHT',
-                body: [
-                  '**🟡 MEDIUM SECURITY**: Information Disclosure - Logging sensitive user data',
-                  '',
-                  '**Severity**: MEDIUM | **CVSS**: 5.3',
-                  '',
-                  'Logging user context and sensitive information can lead to data leaks if logs are compromised or accessed by unauthorized parties.',
-                  '',
-                  '**Fix**: Remove sensitive data from logs:',
-                  '````suggestion',
-                  '    // SECURITY FIX: Log without exposing sensitive user information',
-                  '    console.log(`Stock updated for product ${product.name}: ${product.stock} -> ${newStock}`);',
-                  '````',
-                  '',
-                  '**Implementation Time**: 2 minutes',
-                  '',
-                  '_Commit this suggestion to prevent information disclosure._',
-                  '<!-- PR-Bot Feedback-Section-Start -->',
-                  '---',
-                  '_Please provide feedback on the review comment by checking the appropriate box:_',
-                  '',
-                  '- [ ] <!-- PR-Bot Feedback Awesome --> 🌟 Awesome comment, a human might have missed that.',
-                  '- [ ] <!-- PR-Bot Feedback Helpful --> ✅ Helpful comment',
-                  '- [ ] <!-- PR-Bot Feedback Neutral --> 🤷 Neutral',
-                  '- [ ] <!-- PR-Bot Feedback Not helpful --> ❌ This comment is not helpful<!-- PR-Bot Feedback-Section-End -->'
-                ].join('\n')
-              },
-              {
-                path: 'srv/product-service.js',
-                line: 303,
-                side: 'RIGHT',
-                body: [
-                  '**🔴 CRITICAL SECURITY**: SQL Injection Vulnerability in Advanced Search',
-                  '',
-                  '**Severity**: CRITICAL | **CVSS**: 9.1 | **CWE-89**',
-                  '',
-                  'Direct string concatenation in SQL WHERE clause allows SQL injection attacks. An attacker could manipulate the `searchTerm` parameter to access, modify, or delete data.',
-                  '',
-                  '**Attack Example**: `searchTerm = "\' OR 1=1; DROP TABLE Products; --"`',
-                  '',
-                  '**Current Vulnerable Code**:',
-                  '```javascript',
-                  'query = query.where(`name like \'%${searchTerm}%\' or description like \'%${searchTerm}%\'`);',
-                  '```',
-                  '',
-                  '**Fix**: Use CDS parameterized query methods:',
-                  '````suggestion',
-                  '    // SECURITY FIX: Use parameterized query to prevent SQL injection',
-                  '    if (searchTerm) {',
-                  '      const sanitizedTerm = String(searchTerm).replace(/[\'";]/g, \'\');',
-                  '      query = query.where(',
-                  '        `name like \'%\' || ? || \'%\' or description like \'%\' || ? || \'%\'`,',
-                  '        sanitizedTerm, sanitizedTerm',
-                  '      );',
-                  '    }',
-                  '````',
-                  '',
-                  '**Better Approach** - Use CDS expression builder:',
-                  '```javascript',
-                  'if (searchTerm) {',
-                  '  query = query.where(',
-                  '    { name: { like: `%${searchTerm}%` } },',
-                  '    \'or\',',
-                  '    { description: { like: `%${searchTerm}%` } }',
-                  '  );',
-                  '}',
-                  '```',
-                  '',
-                  '**Implementation Time**: 5 minutes',
-                  '**Priority**: IMMEDIATE - Block merge until fixed',
-                  '',
-                  '_Commit this suggestion immediately to prevent SQL injection attacks._',
-                  '<!-- PR-Bot Feedback-Section-Start -->',
-                  '---',
-                  '_Please provide feedback on the review comment by checking the appropriate box:_',
-                  '',
-                  '- [ ] <!-- PR-Bot Feedback Awesome --> 🌟 Awesome comment, a human might have missed that.',
-                  '- [ ] <!-- PR-Bot Feedback Helpful --> ✅ Helpful comment',
-                  '- [ ] <!-- PR-Bot Feedback Neutral --> 🤷 Neutral',
-                  '- [ ] <!-- PR-Bot Feedback Not helpful --> ❌ This comment is not helpful<!-- PR-Bot Feedback-Section-End -->'
-                ].join('\n')
-              },
-              {
-                path: 'srv/analytics-service.js',
-                line: 32,
-                side: 'RIGHT',
-                body: [
-                  '**🔴 CRITICAL SECURITY**: Command Injection Vulnerability',
-                  '',
-                  '**Severity**: CRITICAL | **CVSS**: 9.8 | **CWE-78**',
-                  '',
-                  'User input in shell commands allows command injection attacks. An attacker could execute arbitrary system commands.',
-                  '',
-                  '**Attack Example**: `filename = "output.csv; rm -rf / #"`',
-                  '',
-                  '**Fix**: Use Node.js file system APIs instead of shell commands:',
-                  '````suggestion',
-                  '    // SECURITY FIX: Use fs module instead of shell commands',
-                  '    const { filename } = req.data;',
-                  '    const fs = require(\'fs\').promises;',
-                  '    const path = require(\'path\');',
-                  '    ',
-                  '    // Sanitize filename and use safe path',
-                  '    const safeFilename = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, \'\');',
-                  '    const outputPath = path.join(\'/tmp\', safeFilename);',
-                  '    ',
-                  '    try {',
-                  '      await fs.copyFile(\'products.csv\', outputPath);',
-                  '      return { message: \'Export completed\', file: safeFilename };',
-                  '    } catch (error) {',
-                  '      console.error(`Export failed: ${error.message}`);',
-                  '      throw new Error(\'Export failed\');',
-                  '    }',
-                  '````',
-                  '',
-                  '**Implementation Time**: 10 minutes',
-                  '**Priority**: IMMEDIATE',
-                  '',
-                  '_Commit this suggestion immediately to prevent command injection attacks._',
-                  '<!-- PR-Bot Feedback-Section-Start -->',
-                  '---',
-                  '_Please provide feedback on the review comment by checking the appropriate box:_',
-                  '',
-                  '- [ ] <!-- PR-Bot Feedback Awesome --> 🌟 Awesome comment, a human might have missed that.',
-                  '- [ ] <!-- PR-Bot Feedback Helpful --> ✅ Helpful comment',
-                  '- [ ] <!-- PR-Bot Feedback Neutral --> 🤷 Neutral',
-                  '- [ ] <!-- PR-Bot Feedback Not helpful --> ❌ This comment is not helpful<!-- PR-Bot Feedback-Section-End -->'
-                ].join('\n')
-              },
-              {
-                path: 'srv/analytics-service.js',
-                line: 46,
-                side: 'RIGHT',
-                body: [
-                  '**🔴 HIGH SECURITY**: Missing Authentication - Unauthenticated Destructive Operation',
-                  '',
-                  '**Severity**: HIGH | **CVSS**: 8.2 | **CWE-306**',
-                  '',
-                  'The `deleteAllProducts` operation has no authentication or authorization checks. Any user can delete all products from the system.',
-                  '',
-                  '**Fix**: Add authentication and authorization:',
-                  '````suggestion',
-                  '    // SECURITY FIX: Add authentication and authorization checks',
-                  '    this.on(\'deleteAllProducts\', async (req) => {',
-                  '      // Check if user is authenticated',
-                  '      if (!req.user || !req.user.id) {',
-                  '        return req.error(401, \'Authentication required\');',
-                  '      }',
-                  '      ',
-                  '      // Check if user has admin role',
-                  '      if (!req.user.roles || !req.user.roles.includes(\'admin\')) {',
-                  '        return req.error(403, \'Insufficient permissions - admin role required\');',
-                  '      }',
-                  '      ',
-                  '      await DELETE.from(\'Products\');',
-                  '      console.log(`All products deleted by admin user ${req.user.id}`);',
-                  '      return { message: \'All products deleted\' };',
-                  '    });',
-                  '````',
-                  '',
-                  '**Implementation Time**: 7 minutes',
-                  '**Priority**: HIGH',
-                  '',
-                  '_Commit this suggestion to add proper authentication and authorization._',
-                  '<!-- PR-Bot Feedback-Section-Start -->',
-                  '---',
-                  '_Please provide feedback on the review comment by checking the appropriate box:_',
-                  '',
-                  '- [ ] <!-- PR-Bot Feedback Awesome --> 🌟 Awesome comment, a human might have missed that.',
-                  '- [ ] <!-- PR-Bot Feedback Helpful --> ✅ Helpful comment',
-                  '- [ ] <!-- PR-Bot Feedback Neutral --> 🤷 Neutral',
-                  '- [ ] <!-- PR-Bot Feedback Not helpful --> ❌ This comment is not helpful<!-- PR-Bot Feedback-Section-End -->'
-                ].join('\n')
-              },
-              {
-                path: 'srv/analytics-service.js',
-                line: 71,
-                side: 'RIGHT',
-                body: [
-                  '**🔴 CRITICAL SECURITY**: Information Disclosure - Exposing Environment Variables',
-                  '',
-                  '**Severity**: CRITICAL | **CVSS**: 9.1 | **CWE-200**',
-                  '',
-                  'Exposing `process.env` reveals all environment variables including sensitive data like API keys, database passwords, and secrets.',
-                  '',
-                  '**Fix**: Remove sensitive information from response:',
-                  '````suggestion',
-                  '      // SECURITY FIX: Return only safe, non-sensitive system information',
-                  '      return {',
-                  '        nodeVersion: process.version,',
-                  '        platform: process.platform,',
-                  '        uptime: Math.floor(process.uptime()),',
-                  '        memoryUsage: {',
-                  '          heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + \'MB\',',
-                  '          heapTotal: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + \'MB\'',
-                  '        }',
-                  '      };',
-                  '````',
-                  '',
-                  '**Implementation Time**: 3 minutes',
-                  '**Priority**: IMMEDIATE',
-                  '',
-                  '_Commit this suggestion immediately to prevent exposure of sensitive environment variables._',
-                  '<!-- PR-Bot Feedback-Section-Start -->',
-                  '---',
-                  '_Please provide feedback on the review comment by checking the appropriate box:_',
-                  '',
-                  '- [ ] <!-- PR-Bot Feedback Awesome --> 🌟 Awesome comment, a human might have missed that.',
-                  '- [ ] <!-- PR-Bot Feedback Helpful --> ✅ Helpful comment',
-                  '- [ ] <!-- PR-Bot Feedback Neutral --> 🤷 Neutral',
-                  '- [ ] <!-- PR-Bot Feedback Not helpful --> ❌ This comment is not helpful<!-- PR-Bot Feedback-Section-End -->'
-                ].join('\n')
-              },
-              {
-                path: 'srv/config.js',
-                line: 10,
-                side: 'RIGHT',
-                body: [
-                  '**🔴 CRITICAL SECURITY**: Hardcoded Database Credentials',
-                  '',
-                  '**Severity**: CRITICAL | **CVSS**: 9.8 | **CWE-798**',
-                  '',
-                  'Database credentials should never be hardcoded in source code. This exposes sensitive credentials in version control and makes credential rotation impossible.',
-                  '',
-                  '**Fix**: Use environment variables:',
-                  '````suggestion',
-                  '  // SECURITY FIX: Use environment variables for sensitive credentials',
-                  '  database: {',
-                  '    host: process.env.DB_HOST || \'localhost\',',
-                  '    user: process.env.DB_USER || \'user\',',
-                  '    password: process.env.DB_PASSWORD, // Never hardcode passwords!',
-                  '    database: process.env.DB_NAME || \'products_db\',',
-                  '    port: parseInt(process.env.DB_PORT || \'5432\')',
-                  '  },',
-                  '````',
-                  '',
-                  '**Additional Steps**:',
-                  '1. Add to `.gitignore`: `.env`',
-                  '2. Create `.env.example` with placeholder values',
-                  '3. Document required environment variables in README',
-                  '',
-                  '**Implementation Time**: 8 minutes',
-                  '**Priority**: IMMEDIATE',
-                  '',
-                  '_Commit this suggestion and remove hardcoded credentials from git history._',
-                  '<!-- PR-Bot Feedback-Section-Start -->',
-                  '---',
-                  '_Please provide feedback on the review comment by checking the appropriate box:_',
-                  '',
-                  '- [ ] <!-- PR-Bot Feedback Awesome --> 🌟 Awesome comment, a human might have missed that.',
-                  '- [ ] <!-- PR-Bot Feedback Helpful --> ✅ Helpful comment',
-                  '- [ ] <!-- PR-Bot Feedback Neutral --> 🤷 Neutral',
-                  '- [ ] <!-- PR-Bot Feedback Not helpful --> ❌ This comment is not helpful<!-- PR-Bot Feedback-Section-End -->'
-                ].join('\n')
-              },
-              {
-                path: 'srv/config.js',
-                line: 18,
-                side: 'RIGHT',
-                body: [
-                  '**🔴 HIGH SECURITY**: Hardcoded API Keys',
-                  '',
-                  '**Severity**: HIGH | **CVSS**: 8.2 | **CWE-798**',
-                  '',
-                  'API keys should never be hardcoded. This exposes credentials and prevents secure key rotation.',
-                  '',
-                  '**Fix**: Use environment variables:',
-                  '````suggestion',
-                  '  // SECURITY FIX: Use environment variables for API keys',
-                  '  apiKeys: {',
-                  '    paymentGateway: process.env.PAYMENT_API_KEY,',
-                  '    cloudStorage: {',
-                  '      accessKeyId: process.env.CLOUD_ACCESS_KEY_ID,',
-                  '      secretAccessKey: process.env.CLOUD_SECRET_KEY',
-                  '    },',
-                  '    emailService: process.env.EMAIL_API_KEY',
-                  '  },',
-                  '````',
-                  '',
-                  '**Implementation Time**: 5 minutes',
-                  '**Priority**: HIGH',
-                  '',
-                  '_Commit this suggestion to protect API keys._',
-                  '<!-- PR-Bot Feedback-Section-Start -->',
-                  '---',
-                  '_Please provide feedback on the review comment by checking the appropriate box:_',
-                  '',
-                  '- [ ] <!-- PR-Bot Feedback Awesome --> 🌟 Awesome comment, a human might have missed that.',
-                  '- [ ] <!-- PR-Bot Feedback Helpful --> ✅ Helpful comment',
-                  '- [ ] <!-- PR-Bot Feedback Neutral --> 🤷 Neutral',
-                  '- [ ] <!-- PR-Bot Feedback Not helpful --> ❌ This comment is not helpful<!-- PR-Bot Feedback-Section-End -->'
-                ].join('\n')
-              }
-            ];
-
-            // Post each suggestion as a review comment
-            for (const suggestion of suggestions) {
-              try {
-                await github.rest.pulls.createReviewComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  pull_number: prNumber,
-                  commit_id: headSha,
-                  path: suggestion.path,
-                  line: suggestion.line,
-                  side: suggestion.side,
-                  body: suggestion.body
-                });
-                console.log(`Posted suggestion for ${suggestion.path}:${suggestion.line}`);
-              } catch (error) {
-                console.log(`Failed to post suggestion for ${suggestion.path}:${suggestion.line}`, error.message);
-              }
-            }
-
       - name: Analyze Code and Post Review
         uses: actions/github-script@v7
         with:
@@ -470,15 +66,13 @@ jobs:
             const correlationId = require('crypto').randomUUID();
 
             // Analysis summary
-            const summary = 'This PR adds currency validation logic with hardcoded configuration. It contains input sanitization issues that should be resolved before merging: missing trim/uppercase normalization on currency input (line 28-32 in srv/product-service.js), hardcoded currency list that should be externalized to config, and potential injection vulnerabilities from unvalidated user input.';
+            const summary = `This PR modifies ${fileCount} file(s) with ${additions} additions and ${deletions} deletions. Please review the changes carefully.`;
 
             // Build the consolidated review comment
             const reviewBody = [
-              '## 🚨 Security Audit Failed - Critical Vulnerabilities Detected',
+              '## 🚀 Hyperspace Bot - Automated PR Analysis',
               '',
-              '**Status**: ❌ **FAILED** - Immediate action required',
-              '',
-              'This PR contains **9 security vulnerabilities** including 5 CRITICAL and 2 HIGH severity issues that must be addressed before merging.',
+              '**Status**: ✅ **Analysis Complete**',
               '',
               summary,
               '',
@@ -492,285 +86,43 @@ jobs:
               '- Correlation ID: `' + correlationId + '`',
               '- Files Changed: ' + fileCount,
               '- Lines: +' + additions + ' / -' + deletions,
-              '- Security Scan: FAILED',
-              '- Total Vulnerabilities: 9',
-              '- CRITICAL: 5 | HIGH: 2 | MEDIUM: 2',
               '',
               '</details>',
               '',
               '---',
               '',
-              '## 🛡️ Security Vulnerabilities Summary',
+              '## 📊 Analysis Summary',
               '',
-              '### Critical Severity (5)',
+              `**PR Title:** ${prTitle}`,
               '',
-              '| Severity | Vulnerability | CVSS | File | Line | Fix Available |',
-              '|----------|--------------|------|------|------|---------------|',
-              '| 🔴 CRITICAL | Code Injection (eval) | 9.8 | `srv/product-service.js` | 51-57 | ✅ [View Fix](#) |',
-              '| 🔴 CRITICAL | SQL Injection | 9.1 | `srv/analytics-service.js` | 17-18 | ✅ [View Fix](#) |',
-              '| 🔴 CRITICAL | Command Injection | 9.8 | `srv/analytics-service.js` | 32 | ✅ [View Fix](#) |',
-              '| 🔴 CRITICAL | Information Disclosure (env vars) | 9.1 | `srv/analytics-service.js` | 71 | ✅ [View Fix](#) |',
-              '| 🔴 CRITICAL | Hardcoded Credentials | 9.8 | `srv/config.js` | 10-13 | ✅ [View Fix](#) |',
-              '',
-              '### High Severity (2)',
-              '',
-              '| Severity | Vulnerability | CVSS | File | Line | Fix Available |',
-              '|----------|--------------|------|------|------|---------------|',
-              '| 🟠 HIGH | Hardcoded API Keys | 8.2 | `srv/config.js` | 18-23 | ✅ [View Fix](#) |',
-              '| 🟠 HIGH | Missing Authentication | 8.2 | `srv/analytics-service.js` | 46 | ✅ [View Fix](#) |',
-              '',
-              '### Medium Severity (2)',
-              '',
-              '| Severity | Vulnerability | CVSS | File | Line | Fix Available |',
-              '|----------|--------------|------|------|------|---------------|',
-              '| 🟡 MEDIUM | XSS Vulnerability | 7.5 | `srv/product-service.js` | 30-32 | ✅ [View Fix](#) |',
-              '| 🟡 MEDIUM | Information Disclosure (logs) | 5.3 | `srv/product-service.js` | 120 | ✅ [View Fix](#) |',
+              `**Files Modified:** ${fileCount}`,
               '',
               '---',
               '',
-              '## 🔍 Detailed Security Analysis',
+              '## ⚖️ Recommendation',
               '',
-              '### 🔴 CRITICAL #1: Code Injection via eval()',
+              '**Decision:** ✅ **READY FOR REVIEW**',
               '',
-              '**File:** `srv/product-service.js` (Lines 51-57)',
+              '### Next Steps',
               '',
-              '**CWE:** CWE-94 (Improper Control of Generation of Code)',
-              '**CVSS Score:** 9.8 (Critical)',
-              '**Attack Vector:** Network | Attack Complexity: Low | Privileges: None',
-              '',
-              '**Vulnerability:**',
-              'Using `eval()` on user-supplied input allows arbitrary code execution. An attacker can inject malicious JavaScript code through the product name field.',
-              '',
-              '**Proof of Concept:**',
-              '```javascript',
-              '// Malicious input:',
-              'name: "; require(\'child_process\').exec(\'cat /etc/passwd\'); "',
-              '// Result: Executes arbitrary system commands',
-              '```',
-              '',
-              '**See inline commit suggestion on line 51 for the complete fix.**',
-              '',
-              '**Impact:**',
-              '- Complete system compromise',
-              '- Data exfiltration',
-              '- Service disruption',
-              '- Privilege escalation',
-              '',
-              '**Remediation Time:** 3 minutes',
+              '1. Review the code changes in the **Files changed** tab',
+              '2. Ensure all tests pass: `npm test`',
+              '3. Check code style compliance: `npm run lint`',
+              '4. Verify the changes work as expected',
               '',
               '---',
               '',
-              '### 🔴 CRITICAL #2: SQL Injection',
+              '## 📋 PR Checklist',
               '',
-              '**File:** `srv/analytics-service.js` (Lines 17-18)',
-              '',
-              '**CWE:** CWE-89 (SQL Injection)',
-              '**CVSS Score:** 9.1 (Critical)',
-              '',
-              '**Vulnerability:**',
-              'Direct string concatenation in SQL queries allows SQL injection attacks.',
-              '',
-              '**Proof of Concept:**',
-              '```javascript',
-              '// Malicious input:',
-              'searchTerm: "\' OR 1=1; DROP TABLE Products; --"',
-              '// Result: Deletes entire Products table',
-              '```',
-              '',
-              '**See inline commit suggestion on line 17 for parameterized query fix.**',
-              '',
-              '**Impact:**',
-              '- Unauthorized data access',
-              '- Data manipulation/deletion',
-              '- Authentication bypass',
-              '',
-              '**Remediation Time:** 5 minutes',
+              '- [ ] Code changes reviewed',
+              '- [ ] Tests are passing',
+              '- [ ] Code follows project style guidelines',
+              '- [ ] Documentation updated if needed',
+              '- [ ] Ready for merge',
               '',
               '---',
               '',
-              '### 🔴 CRITICAL #3: Command Injection',
-              '',
-              '**File:** `srv/analytics-service.js` (Line 32)',
-              '',
-              '**CWE:** CWE-78 (OS Command Injection)',
-              '**CVSS Score:** 9.8 (Critical)',
-              '',
-              '**Vulnerability:**',
-              'User input directly used in shell commands enables arbitrary command execution.',
-              '',
-              '**Proof of Concept:**',
-              '```javascript',
-              '// Malicious input:',
-              'filename: "output.csv; rm -rf / #"',
-              '// Result: Deletes entire filesystem',
-              '```',
-              '',
-              '**See inline commit suggestion on line 32 for safe file operations.**',
-              '',
-              '**Impact:**',
-              '- System compromise',
-              '- Data loss',
-              '- Service disruption',
-              '',
-              '**Remediation Time:** 10 minutes',
-              '',
-              '---',
-              '',
-              '### 🔴 CRITICAL #4: Hardcoded Database Credentials',
-              '',
-              '**File:** `srv/config.js` (Lines 10-13)',
-              '',
-              '**CWE:** CWE-798 (Use of Hard-coded Credentials)',
-              '**CVSS Score:** 9.8 (Critical)',
-              '',
-              '**Vulnerability:**',
-              'Database credentials hardcoded in source code and committed to version control.',
-              '',
-              '**See inline commit suggestion on line 10 for environment variable usage.**',
-              '',
-              '**Impact:**',
-              '- Full database access for anyone with code access',
-              '- Credentials exposed in git history',
-              '- Impossible to rotate credentials without code changes',
-              '',
-              '**Additional Actions Required:**',
-              '1. Rotate compromised credentials immediately',
-              '2. Remove credentials from git history',
-              '3. Add `.env` to `.gitignore`',
-              '',
-              '**Remediation Time:** 8 minutes + credential rotation',
-              '',
-              '---',
-              '',
-              '### 🔴 CRITICAL #5: Information Disclosure - Environment Variables',
-              '',
-              '**File:** `srv/analytics-service.js` (Line 71)',
-              '',
-              '**CWE:** CWE-200 (Information Exposure)',
-              '**CVSS Score:** 9.1 (Critical)',
-              '',
-              '**Vulnerability:**',
-              'Exposing `process.env` reveals all environment variables including API keys, database passwords, and secrets.',
-              '',
-              '**See inline commit suggestion on line 71 for safe system info endpoint.**',
-              '',
-              '**Impact:**',
-              '- Exposure of all secrets and credentials',
-              '- Complete system compromise',
-              '- Lateral movement to other services',
-              '',
-              '**Remediation Time:** 3 minutes',
-              '',
-              '---',
-              '',
-              '## 🔧 How to Fix',
-              '',
-              '### Step 1: Review Inline Suggestions',
-              '',
-              'Navigate to the **Files changed** tab and look for inline comments on these lines:',
-              '- `srv/product-service.js`: Lines 30, 51, 120',
-              '- `srv/analytics-service.js`: Lines 17, 32, 46, 71',
-              '- `srv/config.js`: Lines 10, 18',
-              '',
-              '### Step 2: Commit Suggestions Directly',
-              '',
-              'Each inline comment has a **"Commit suggestion"** button. Click it to apply the fix directly!',
-              '',
-              '### Step 3: Verify Fixes',
-              '',
-              'After committing all suggestions:',
-              '```bash',
-              'npm test',
-              'npm run lint',
-              '```',
-              '',
-              '---',
-              '',
-              '## 📊 Risk Assessment',
-              '',
-              '**Overall Risk Level:** 🔴 **CRITICAL**',
-              '',
-              '| Category | Score | Status |',
-              '|----------|-------|--------|',
-              '| Code Injection | 9.8 | ❌ FAILED |',
-              '| SQL Injection | 9.1 | ❌ FAILED |',
-              '| Command Injection | 9.8 | ❌ FAILED |',
-              '| Credential Management | 9.8 | ❌ FAILED |',
-              '| Information Disclosure | 9.1 | ❌ FAILED |',
-              '| Authentication | 8.2 | ❌ FAILED |',
-              '| Input Validation | 7.5 | ⚠️ WARNING |',
-              '',
-              '**Recommendation:** ❌ **DO NOT MERGE** until all CRITICAL and HIGH vulnerabilities are resolved.',
-              '',
-              '---',
-              '',
-              '## ⚖️ Final Recommendation',
-              '',
-              '**Decision:** ❌ **CHANGES REQUIRED - SECURITY BLOCK**',
-              '',
-              '### Required Actions (Priority Order)',
-              '',
-              '**IMMEDIATE (Must fix before any review):**',
-              '',
-              '1. 🔴 **Fix Code Injection** (CRITICAL) - 3 min',
-              '   - File: `srv/product-service.js:51`',
-              '   - **Commit inline suggestion immediately**',
-              '',
-              '2. 🔴 **Fix SQL Injection** (CRITICAL) - 5 min',
-              '   - File: `srv/analytics-service.js:17`',
-              '   - **Commit inline suggestion**',
-              '',
-              '3. 🔴 **Fix Command Injection** (CRITICAL) - 10 min',
-              '   - File: `srv/analytics-service.js:32`',
-              '   - **Commit inline suggestion**',
-              '',
-              '4. 🔴 **Remove Hardcoded Credentials** (CRITICAL) - 8 min',
-              '   - File: `srv/config.js:10`',
-              '   - **Commit inline suggestion**',
-              '   - Rotate compromised credentials',
-              '',
-              '5. 🔴 **Fix Information Disclosure** (CRITICAL) - 3 min',
-              '   - File: `srv/analytics-service.js:71`',
-              '   - **Commit inline suggestion**',
-              '',
-              '**HIGH PRIORITY (Fix before merge):**',
-              '',
-              '6. 🟠 **Remove Hardcoded API Keys** (HIGH) - 5 min',
-              '   - File: `srv/config.js:18`',
-              '   - **Commit inline suggestion**',
-              '',
-              '7. 🟠 **Add Authentication** (HIGH) - 7 min',
-              '   - File: `srv/analytics-service.js:46`',
-              '   - **Commit inline suggestion**',
-              '',
-              '**MEDIUM PRIORITY (Should fix):**',
-              '',
-              '8. 🟡 **Fix XSS Vulnerability** (MEDIUM) - 5 min',
-              '   - File: `srv/product-service.js:30`',
-              '   - **Commit inline suggestion**',
-              '',
-              '9. 🟡 **Fix Information Disclosure in Logs** (MEDIUM) - 2 min',
-              '   - File: `srv/product-service.js:120`',
-              '   - **Commit inline suggestion**',
-              '',
-              '**Total Estimated Time:** ~48 minutes',
-              '',
-              '---',
-              '',
-              '## 📋 Security Checklist',
-              '',
-              '- [ ] All CRITICAL vulnerabilities fixed (5 issues)',
-              '- [ ] All HIGH vulnerabilities fixed (2 issues)',
-              '- [ ] All MEDIUM vulnerabilities fixed (2 issues)',
-              '- [ ] Compromised credentials rotated',
-              '- [ ] `.env` added to `.gitignore`',
-              '- [ ] Unit tests updated and passing',
-              '- [ ] Security scan re-run and passed',
-              '- [ ] Code review completed',
-              '',
-              '---',
-              '',
-              '*🚨 Security audit failed. View inline commit suggestions in the **Files changed** tab to fix each vulnerability. Each suggestion can be committed directly with one click!*'
+              '*✅ Automated analysis complete. The PR is ready for human review.*'
             ].join('\n');
 
             // Post the consolidated review
@@ -781,7 +133,7 @@ jobs:
               body: reviewBody
             });
 
-      - name: Request Reviews from Bots
+      - name: Add Labels
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -793,64 +145,13 @@ jobs:
                 repo: context.repo.repo,
                 labels: [
                   'hyperspace-analyzed',
-                  'code-quality-review',
-                  'security-review',
-                  'build-check',
-                  'changes-required'
+                  'ready-for-review'
                 ]
               });
 
-              console.log('Added review stage labels');
+              console.log('Added review labels');
             } catch (error) {
               console.log('Error adding labels:', error.message);
-            }
-
-            // Assign PR to author for review
-            try {
-              const prAuthor = context.payload.pull_request.user.login;
-
-              await github.rest.issues.addAssignees({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                assignees: [prAuthor]
-              });
-
-              console.log('Added ' + prAuthor + ' as assignee');
-            } catch (error) {
-              console.log('Could not add assignee:', error.message);
-            }
-
-            // Request review (using PR author as reviewer for demo)
-            // In production: replace with actual code reviewer usernames
-            try {
-              const prAuthor = context.payload.pull_request.user.login;
-
-              // Note: Can't request review from PR author, so this is for demo only
-              // In production, use actual reviewer usernames
-              console.log('Would request review from code-quality-bot, security-scan-bot, build-analyzer-bot');
-            } catch (error) {
-              console.log('Could not request review:', error.message);
-            }
-
-      - name: Update PR Status
-        uses: actions/github-script@v7
-        continue-on-error: true
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            try {
-              await github.rest.repos.createCommitStatus({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                sha: context.payload.pull_request.head.sha,
-                state: 'failure',
-                context: 'Hyperspace Bot / Code Analysis',
-                description: 'Changes required - see PR comments',
-                target_url: 'https://github.com/' + context.repo.owner + '/' + context.repo.repo + '/pull/' + context.issue.number
-              });
-            } catch (error) {
-              console.log('Could not set commit status (permissions):', error.message);
             }
 
   cross-repo-dispatcher:
@@ -884,196 +185,111 @@ jobs:
               apiFiles.some(apiFile => file.filename.includes(apiFile))
             );
 
-            core.setOutput('has_api_changes', hasApiChanges);
+            console.log('API changes detected:', hasApiChanges);
+            core.setOutput('has_changes', hasApiChanges.toString());
+
             return hasApiChanges;
 
-      - name: Read dependent repos configuration
-        if: steps.api-changes.outputs.has_api_changes == 'true'
-        id: read-config
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-
-            // Read dependent-repos.yml and parse manually (simple parser for our use case)
-            const configContent = fs.readFileSync('.github/dependent-repos.yml', 'utf8');
-
-            // Extract dependent repos from YAML manually
-            const dependentRepos = [];
-
-            // Simple YAML parsing for our specific structure
-            const lines = configContent.split('\n');
-            let currentRepo = null;
-
-            for (let i = 0; i < lines.length; i++) {
-              const line = lines[i].trim();
-
-              if (line.startsWith('- name:')) {
-                if (currentRepo) {
-                  dependentRepos.push(currentRepo);
-                }
-                currentRepo = {
-                  name: line.replace('- name:', '').trim(),
-                  critical: false,
-                  estimated_duration: 300
-                };
-              } else if (currentRepo && line.startsWith('repository:')) {
-                currentRepo.repository = line.replace('repository:', '').trim();
-              } else if (currentRepo && line.startsWith('critical:')) {
-                currentRepo.critical = line.replace('critical:', '').trim() === 'true';
-              } else if (currentRepo && line.startsWith('estimated_duration:')) {
-                currentRepo.estimated_duration = parseInt(line.replace('estimated_duration:', '').trim());
-              }
-            }
-
-            if (currentRepo) {
-              dependentRepos.push(currentRepo);
-            }
-
-            console.log('Found dependent repos:', JSON.stringify(dependentRepos, null, 2));
-            return dependentRepos;
+      - name: Load dependent repositories config
+        if: steps.api-changes.outputs.has_changes == 'true'
+        id: load-config
+        run: |
+          if [ -f .github/dependent-repos.yml ]; then
+            echo "config_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "config_exists=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Dispatch integration tests
-        if: steps.api-changes.outputs.has_api_changes == 'true'
+        if: steps.api-changes.outputs.has_changes == 'true' && steps.load-config.outputs.config_exists == 'true'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.CROSS_REPO_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
-            const dependentRepos = ${{ steps.read-config.outputs.result }};
-
-            if (!dependentRepos || dependentRepos.length === 0) {
-              console.log('No dependent repositories configured');
-              return;
-            }
-
-            console.log('Dispatching integration tests to ' + dependentRepos.length + ' repositories...');
+            const fs = require('fs');
+            const yaml = require('js-yaml');
 
             // Check if we have a token with cross-repo permissions
             const hasCrossRepoToken = '${{ secrets.CROSS_REPO_TOKEN }}' !== '';
 
             if (!hasCrossRepoToken) {
               console.log('⚠️ WARNING: CROSS_REPO_TOKEN not configured. Using GITHUB_TOKEN (limited permissions).');
-              console.log('GITHUB_TOKEN cannot trigger workflows in other repositories.');
               console.log('To enable cross-repo testing:');
               console.log('1. Create a Personal Access Token with repo scope');
               console.log('2. Add it as CROSS_REPO_TOKEN secret in repository settings');
-              console.log('3. See: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token');
             }
 
-            for (const repo of dependentRepos) {
+            // Load configuration
+            const configFile = fs.readFileSync('.github/dependent-repos.yml', 'utf8');
+            const config = yaml.load(configFile);
+
+            console.log('Loaded configuration:', JSON.stringify(config, null, 2));
+
+            for (const repo of config.dependent_repos) {
               const [owner, repoName] = repo.repository.split('/');
 
-              console.log('Attempting to dispatch to: ' + repo.repository);
+              console.log(`Dispatching to ${owner}/${repoName}...`);
 
               try {
                 await github.rest.repos.createDispatchEvent({
-                  owner: owner,
+                  owner,
                   repo: repoName,
                   event_type: 'external-integration-test',
                   client_payload: {
                     source_repo: context.repo.owner + '/' + context.repo.repo,
-                    source_pr: context.issue.number,
-                    source_branch: context.payload.pull_request.head.ref,
-                    source_sha: context.payload.pull_request.head.sha,
-                    source_pr_url: context.payload.pull_request.html_url,
-                    triggered_by: context.actor
+                    pr_number: context.issue.number,
+                    pr_title: context.payload.pull_request.title,
+                    pr_url: context.payload.pull_request.html_url,
+                    commit_sha: context.payload.pull_request.head.sha,
+                    branch: context.payload.pull_request.head.ref
                   }
                 });
-
-                console.log('✅ Successfully dispatched to ' + repo.repository);
+                console.log(`✅ Successfully dispatched to ${repo.repository}`);
               } catch (error) {
-                console.error('❌ Failed to dispatch to ' + repo.repository + ':', error.message);
-
+                console.error(`❌ Failed to dispatch to ${repo.repository}:`, error.message);
                 if (error.status === 404) {
-                  console.error('   Repository not found or no access. Check repository exists and token has permissions.');
-                } else if (error.status === 403) {
-                  console.error('   Permission denied. GITHUB_TOKEN cannot trigger workflows in other repos.');
+                  console.error('   Repository not found or no access.');
                   console.error('   Add CROSS_REPO_TOKEN secret with repo scope to enable cross-repo testing.');
                 }
               }
             }
 
       - name: Post cross-repo notification comment
-        if: steps.api-changes.outputs.has_api_changes == 'true'
+        if: steps.api-changes.outputs.has_changes == 'true'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const dependentRepos = ${{ steps.read-config.outputs.result }};
-
-            if (!dependentRepos || dependentRepos.length === 0) {
-              return;
-            }
-
             const hasCrossRepoToken = '${{ secrets.CROSS_REPO_TOKEN }}' !== '';
 
             let comment = '## 🔗 Cross-Repository Integration Tests\n\n';
+            comment += 'API changes detected in this PR. Integration tests will be triggered in dependent repositories.\n\n';
 
             if (!hasCrossRepoToken) {
-              comment += '⚠️ **Configuration Required** - Cross-repo testing is not fully enabled.\n\n';
-              comment += '### Status\n\n';
-              comment += '- API changes detected ✅\n';
-              comment += '- Dependent repositories identified: **' + dependentRepos.length + '**\n';
+              comment += '### ⚠️ Configuration Required\n\n';
               comment += '- Dispatch attempted ⚠️ (requires CROSS_REPO_TOKEN)\n\n';
-              comment += '### Dependent Repositories\n\n';
-
-              for (const repo of dependentRepos) {
-                comment += '- **[' + repo.name + '](https://github.com/' + repo.repository + ')** ';
-                if (repo.critical) {
-                  comment += '🔴 CRITICAL ';
-                }
-                comment += '- Est. ' + (repo.estimated_duration / 60) + ' min\n';
-              }
-
-              comment += '\n### ⚙️ Setup Required\n\n';
               comment += 'To enable automatic cross-repository testing:\n\n';
-              comment += '1. **Create Personal Access Token (classic)**\n';
-              comment += '   - Go to: https://github.com/settings/tokens/new\n';
-              comment += '   - Select scope: `repo` (Full control of private repositories)\n';
-              comment += '   - Generate token and copy it\n\n';
-              comment += '2. **Add Token to Repository Secrets**\n';
-              comment += '   - Go to: https://github.com/' + context.repo.owner + '/' + context.repo.repo + '/settings/secrets/actions\n';
-              comment += '   - Click "New repository secret"\n';
+              comment += '1. Create a Personal Access Token (classic) with `repo` scope\n';
+              comment += '2. Add to repository secrets:\n';
               comment += '   - Name: `CROSS_REPO_TOKEN`\n';
-              comment += '   - Value: (paste your token)\n\n';
-              comment += '3. **Re-run Workflow**\n';
-              comment += '   - Close and reopen this PR, or\n';
-              comment += '   - Push an empty commit: `git commit --allow-empty -m "trigger workflow"`\n\n';
-              comment += '### Alternative: Manual Testing\n\n';
+              comment += '   - Value: Your PAT\n\n';
               comment += 'While cross-repo testing is being configured, you can manually trigger integration tests:\n\n';
-              comment += '1. Go to: https://github.com/' + dependentRepos[0].repository + '/actions/workflows/external-integration-test.yml\n';
-              comment += '2. Click "Run workflow"\n';
-              comment += '3. Enter MockAI PR number: **' + context.issue.number + '**\n';
-              comment += '4. Click "Run workflow"\n\n';
+              comment += '```bash\n';
+              comment += 'cd OrderService\n';
+              comment += 'npm test\n';
+              comment += '```\n';
             } else {
-              comment += '✅ **Integration tests dispatched successfully!**\n\n';
-              comment += 'API changes detected. Dispatched integration tests to **' + dependentRepos.length + '** dependent repositories:\n\n';
-
-              for (const repo of dependentRepos) {
-                comment += '- **[' + repo.name + '](https://github.com/' + repo.repository + ')** ';
-                if (repo.critical) {
-                  comment += '🔴 CRITICAL ';
-                }
-                comment += '- Est. ' + (repo.estimated_duration / 60) + ' min\n';
-              }
-
-              comment += '\n### What happens next?\n\n';
-              comment += '1. Integration tests will run in each dependent repository\n';
-              comment += '2. Results will appear as **GitHub Checks** on this PR\n';
-              comment += '3. Any failures will be reported with detailed logs\n';
-              comment += '4. All tests must pass before this PR can be merged\n\n';
+              comment += '- Dispatch sent ✅\n';
+              comment += '- Waiting for results from dependent repositories...\n\n';
+              comment += 'Results will be posted back to this PR when tests complete.\n';
             }
 
-            comment += '### Test Coverage\n\n';
-            comment += '- Schema validation (OData $metadata compatibility)\n';
-            comment += '- Integration tests (CRUD operations)\n';
-            comment += '- Performance benchmarks (response time thresholds)\n\n';
-            comment += '---\n';
+            comment += '\n---\n';
             comment += '*Automated cross-repository testing • [View configuration](.github/dependent-repos.yml)*\n';
 
             await github.rest.issues.createComment({
+              issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
               body: comment
             });
