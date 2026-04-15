@@ -442,8 +442,13 @@ jobs:
               }
             ];
 
-            // Get changed files from previous step
-            const changedFiles = JSON.parse('${{ steps.pr-files.outputs.changed_files }}');
+            // Get changed files in the PR (directly, not from previous step)
+            const { data: prFiles } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            const changedFiles = prFiles.map(f => f.filename);
             console.log('Changed files in PR:', changedFiles);
 
             // Filter suggestions to only files changed in the PR
@@ -479,7 +484,15 @@ jobs:
             const fileCount = ${{ steps.pr-files.outputs.file_count }};
             const additions = ${{ steps.pr-files.outputs.additions }};
             const deletions = ${{ steps.pr-files.outputs.deletions }};
-            const changedFiles = JSON.parse('${{ steps.pr-files.outputs.changed_files }}');
+
+            // Get changed files in the PR (directly)
+            const { data: prFiles } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            const changedFiles = prFiles.map(f => f.filename);
+            console.log('Changed files in PR:', changedFiles);
 
             // Generate correlation ID
             const correlationId = require('crypto').randomUUID();
