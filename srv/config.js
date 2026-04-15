@@ -1,43 +1,48 @@
 /**
- * Configuration file for product service
- * SECURITY WARNING: This file contains hardcoded credentials
+ * Service Configuration
+ * Centralized constants for product service
  */
 
 module.exports = {
-  // CRITICAL SECURITY ISSUE: Hardcoded database credentials
-  database: {
-    host: 'prod-db.example.com',
-    user: 'admin',
-    password: 'SuperSecret123!',
-    database: 'products_db',
-    port: 5432
+  /**
+   * Valid currency codes (ISO 4217)
+   */
+  validCurrencies: ['USD', 'EUR', 'GBP', 'INR'],
+
+  /**
+   * Price constraints
+   */
+  price: {
+    min: 0.01,
+    max: 999999.99
   },
 
-  // CRITICAL SECURITY ISSUE: API keys exposed (dummy keys for demo)
-  apiKeys: {
-    paymentGateway: 'pk_test_dummy_key_1234567890abcdef',
-    cloudStorage: {
-      accessKeyId: 'DEMO_ACCESS_KEY_12345',
-      secretAccessKey: 'demo_secret_key_abcdefghijklmnop'
-    },
-    emailService: 'SG_demo_key_1234567890'
+  /**
+   * Stock constraints
+   */
+  stock: {
+    min: 0,
+    max: 999999
   },
 
-  // SECURITY ISSUE: JWT secret in plain text
-  jwt: {
-    secret: 'my-super-secret-jwt-key-12345',
-    expiresIn: '24h'
+  /**
+   * Stock status thresholds
+   */
+  stockThresholds: {
+    outOfStock: 0,
+    lowStock: 10
   },
 
-  // CODE QUALITY: Magic numbers and hardcoded values
+  /**
+   * Validation limits
+   */
   validation: {
-    maxPrice: 999999.99,
-    maxStock: 999999,
-    currencies: ['USD', 'EUR', 'GBP', 'INR']
-  },
-
-  // SECURITY ISSUE: Debug mode enabled in production
-  debug: true,
-  logLevel: 'debug',
-  enableDetailedErrors: true
+    nameMaxLength: 100,
+    descriptionMaxLength: 500,
+    categoryNameMaxLength: 50,
+    categoryDescriptionMaxLength: 200,
+    supplierNameMaxLength: 100,
+    orderNumberMaxLength: 20,
+    customerNameMaxLength: 100
+  }
 };
