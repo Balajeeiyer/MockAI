@@ -188,27 +188,7 @@ jobs:
               }
             }
 
-            // Post inline suggestions
-            let suggestionsPosted = 0;
-            for (const suggestion of inlineSuggestions) {
-              try {
-                await github.rest.pulls.createReviewComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  pull_number: prNumber,
-                  body: suggestion.body,
-                  commit_id: headSha,
-                  path: suggestion.path,
-                  line: suggestion.line,
-                  side: suggestion.side
-                });
-                suggestionsPosted++;
-              } catch (error) {
-                console.log(`Failed to post suggestion for ${suggestion.path}:${suggestion.line}: ${error.message}`);
-              }
-            }
-
-            // Post summary comment
+            // Post summary comment with inline resolution suggestions
             let summaryBody = `## 🔀 PRo Merge Conflict Analysis
 
             ### ⚠️ Conflicts Found
@@ -223,23 +203,29 @@ jobs:
               summaryBody += `  - ${analysis.strategy.description}\n\n`;
             }
 
-            if (suggestionsPosted > 0) {
+            // Add detailed inline resolution suggestions section
+            if (conflictAnalysis.length > 0) {
               summaryBody += `
-            ### 📍 Inline Resolution Suggestions
-
-            I've added **${suggestionsPosted} inline suggestion(s)** to help resolve these conflicts:
-
-            **To view**: Go to the **Files changed** tab and look for 💬 comment icons on conflicted files.
-            **To apply**: Review each suggestion and click **"Commit suggestion"** to accept the resolution.
+            ### 🔧 Inline Resolution Suggestions
 
             `;
-            } else {
-              summaryBody += `
-            ### ℹ️ Manual Resolution Required
 
-            The conflicts in this PR require manual review and resolution.
+              for (let i = 0; i < conflictAnalysis.length; i++) {
+                const analysis = conflictAnalysis[i];
+                const suggestion = inlineSuggestions[i];
+
+                if (suggestion) {
+                  summaryBody += `
+            <details>
+            <summary><strong>📍 ${analysis.file}:${analysis.startLine}</strong> - ${analysis.strategy.name}</summary>
+
+            ${suggestion.body}
+
+            </details>
 
             `;
+                }
+              }
             }
 
             summaryBody += `
@@ -391,55 +377,69 @@ jobs:
               if (strategy.resolution === 'accept-current') {
                 resolvedContent = currentLines.join('\n');
                 suggestionBody = [
-                  '**🔀 MERGE CONFLICT: Accept Your Changes**',
-                  '',
                   '**Resolution Strategy**: Keep changes from your branch',
                   '',
                   '**Your changes**:',
                   '```javascript',
-                  currentLines.slice(0, 10).join('\n') + (currentLines.length > 10 ? '\n...' : ''),
+                  currentLines.slice(0, 15).join('\n') + (currentLines.length > 15 ? '\n  // ...' : ''),
                   '```',
                   '',
                   '**Base branch changes**:',
                   '```javascript',
-                  baseLines.slice(0, 10).join('\n') + (baseLines.length > 10 ? '\n...' : ''),
+                  baseLines.slice(0, 15).join('\n') + (baseLines.length > 15 ? '\n  // ...' : ''),
                   '```',
                   '',
-                  '**Suggested resolution**:',
-                  '```suggestion',
+                  '---',
+                  '',
+                  '### 💡 Recommended Resolution',
+                  '',
+                  'Replace the conflicted section with your branch changes:',
+                  '',
+                  '```javascript',
                   resolvedContent,
                   '```',
                   '',
                   '**Why this resolution?** Your changes appear to be the intended modification.',
                   '',
-                  '_Click "Commit suggestion" to accept this resolution._'
+                  '**How to apply**:',
+                  '1. Open the file in your editor',
+                  '2. Keep everything between `<<<<<<< HEAD` and `=======`',
+                  '3. Delete everything between `=======` and `>>>>>>>` including markers',
+                  '4. Commit the resolved file'
                 ].join('\n');
 
               } else if (strategy.resolution === 'accept-base') {
                 resolvedContent = baseLines.join('\n');
                 suggestionBody = [
-                  '**🔀 MERGE CONFLICT: Accept Base Branch Changes**',
-                  '',
                   '**Resolution Strategy**: Keep changes from base branch',
                   '',
                   '**Your changes**:',
                   '```javascript',
-                  currentLines.slice(0, 10).join('\n') + (currentLines.length > 10 ? '\n...' : ''),
+                  currentLines.slice(0, 15).join('\n') + (currentLines.length > 15 ? '\n  // ...' : ''),
                   '```',
                   '',
                   '**Base branch changes**:',
                   '```javascript',
-                  baseLines.slice(0, 10).join('\n') + (baseLines.length > 10 ? '\n...' : ''),
+                  baseLines.slice(0, 15).join('\n') + (baseLines.length > 15 ? '\n  // ...' : ''),
                   '```',
                   '',
-                  '**Suggested resolution**:',
-                  '```suggestion',
+                  '---',
+                  '',
+                  '### 💡 Recommended Resolution',
+                  '',
+                  'Replace the conflicted section with base branch changes:',
+                  '',
+                  '```javascript',
                   resolvedContent,
                   '```',
                   '',
                   '**Why this resolution?** Base branch changes should take precedence.',
                   '',
-                  '_Click "Commit suggestion" to accept this resolution._'
+                  '**How to apply**:',
+                  '1. Open the file in your editor',
+                  '2. Keep everything between `=======` and `>>>>>>>`',
+                  '3. Delete everything between `<<<<<<< HEAD` and `=======` including markers',
+                  '4. Commit the resolved file'
                 ].join('\n');
 
               } else if (strategy.resolution === 'merge-both') {
@@ -447,18 +447,35 @@ jobs:
                 const merged = [...new Set([...currentLines, ...baseLines])];
                 resolvedContent = merged.join('\n');
                 suggestionBody = [
-                  '**🔀 MERGE CONFLICT: Merge Both Changes**',
-                  '',
                   '**Resolution Strategy**: Combine changes from both branches',
                   '',
-                  '**Suggested resolution** (merged):',
-                  '```suggestion',
+                  '**Your changes**:',
+                  '```javascript',
+                  currentLines.join('\n'),
+                  '```',
+                  '',
+                  '**Base branch changes**:',
+                  '```javascript',
+                  baseLines.join('\n'),
+                  '```',
+                  '',
+                  '---',
+                  '',
+                  '### 💡 Recommended Resolution',
+                  '',
+                  'Merge both sets of changes:',
+                  '',
+                  '```javascript',
                   resolvedContent,
                   '```',
                   '',
                   '**Why this resolution?** Both sets of changes can coexist.',
                   '',
-                  '_Click "Commit suggestion" to accept this resolution._'
+                  '**How to apply**:',
+                  '1. Open the file in your editor',
+                  '2. Replace the entire conflict section with the merged code above',
+                  '3. Remove all conflict markers',
+                  '4. Commit the resolved file'
                 ].join('\n');
 
               } else if (strategy.resolution === 'merge-config') {
@@ -477,24 +494,27 @@ jobs:
                 ].join('\n');
 
                 suggestionBody = [
-                  '**🔀 MERGE CONFLICT: Configuration Security Improvement**',
-                  '',
                   '**Resolution Strategy**: Use environment-based configuration (main branch)',
                   '',
-                  '**Your branch**:',
+                  '**Your branch** (feature):',
                   '```javascript',
-                  currentLines.slice(0, 10).join('\n') + (currentLines.length > 10 ? '\n...' : ''),
+                  currentLines.slice(0, 15).join('\n') + (currentLines.length > 15 ? '\n  // ...' : ''),
                   '```',
-                  '*Contains hardcoded credentials - security risk!*',
+                  '⚠️ *Contains hardcoded credentials - security risk!*',
                   '',
                   '**Main branch**:',
                   '```javascript',
                   baseLines.join('\n'),
                   '```',
-                  '*Uses environment variables - secure approach!*',
+                  '✅ *Uses environment variables - secure approach!*',
                   '',
-                  '**Recommended resolution**:',
-                  '```suggestion',
+                  '---',
+                  '',
+                  '### 💡 Recommended Resolution',
+                  '',
+                  'Replace the conflicted section with this secure configuration:',
+                  '',
+                  '```javascript',
                   resolvedContent,
                   '```',
                   '',
@@ -504,33 +524,45 @@ jobs:
                   '- ✅ Follows security best practices',
                   '- ✅ Prevents credential leaks in version control',
                   '',
-                  '**Note**: After merging, configure these environment variables:',
+                  '**How to apply**:',
+                  '1. Open `srv/config.js` in your editor',
+                  '2. Find the conflict markers (<<<<<<< HEAD)',
+                  '3. Replace the entire conflict section with the code above',
+                  '4. Remove conflict markers',
+                  '5. Commit: `git add srv/config.js && git commit -m "fix: resolve config merge conflict - use env vars"`',
+                  '',
+                  '**Environment variables needed**:',
                   '```bash',
                   'export NODE_ENV=production',
                   'export PORT=4004',
                   'export LOG_LEVEL=info',
-                  '```',
-                  '',
-                  '_Click "Commit suggestion" to apply secure configuration._'
+                  '```'
                 ].join('\n');
 
               } else if (strategy.resolution === 'regenerate') {
                 suggestionBody = [
-                  '**🔀 MERGE CONFLICT: Lock File Conflict**',
-                  '',
                   '**Resolution Strategy**: Regenerate lock file',
                   '',
-                  '**Recommended action**:',
+                  '⚠️ **Lock files should be regenerated rather than manually merged.**',
+                  '',
+                  '---',
+                  '',
+                  '### 💡 Recommended Action',
+                  '',
+                  'Run these commands to regenerate the lock file:',
+                  '',
                   '```bash',
                   'rm package-lock.json',
                   'npm install',
                   'git add package-lock.json',
                   'git commit -m "fix: regenerate package-lock.json"',
+                  'git push',
                   '```',
                   '',
-                  '**Why?** Lock files should be regenerated rather than manually merged.',
-                  '',
-                  '_This requires manual resolution - follow the commands above._'
+                  '**Why regenerate?**',
+                  '- Lock files contain dependency trees',
+                  '- Manual merging can create inconsistencies',
+                  '- npm/yarn will generate correct resolved state'
                 ].join('\n');
 
                 // No inline suggestion for regenerate strategy
@@ -544,29 +576,38 @@ jobs:
               } else {
                 // Manual review needed
                 suggestionBody = [
-                  '**🔀 MERGE CONFLICT: Manual Review Required**',
-                  '',
                   '**Resolution Strategy**: Careful manual review needed',
                   '',
                   '**Your changes**:',
                   '```javascript',
-                  currentLines.slice(0, 10).join('\n') + (currentLines.length > 10 ? '\n...' : ''),
+                  currentLines.slice(0, 20).join('\n') + (currentLines.length > 20 ? '\n  // ...' : ''),
                   '```',
                   '',
                   '**Base branch changes**:',
                   '```javascript',
-                  baseLines.slice(0, 10).join('\n') + (baseLines.length > 10 ? '\n...' : ''),
+                  baseLines.slice(0, 20).join('\n') + (baseLines.length > 20 ? '\n  // ...' : ''),
                   '```',
                   '',
-                  '**Options**:',
-                  '1. Keep your changes (current branch)',
-                  '2. Keep base branch changes',
-                  '3. Merge both changes manually',
-                  '4. Write entirely new resolution',
+                  '---',
+                  '',
+                  '### 💡 Resolution Options',
                   '',
                   '**Why manual review?** Both branches made substantial changes that require human judgment.',
                   '',
-                  '_Resolve this conflict in your editor and push the changes._'
+                  '**Options**:',
+                  '1. **Keep your changes** (current branch)',
+                  '2. **Keep base branch changes**',
+                  '3. **Merge both changes manually**',
+                  '4. **Write entirely new resolution**',
+                  '',
+                  '**How to resolve**:',
+                  '1. Open the file in your editor',
+                  '2. Carefully review both versions',
+                  '3. Decide which changes to keep or combine',
+                  '4. Edit the file to your desired state',
+                  '5. Remove all conflict markers (<<<<<<, =======, >>>>>>>)',
+                  '6. Test your changes',
+                  '7. Commit the resolved file'
                 ].join('\n');
 
                 return {
