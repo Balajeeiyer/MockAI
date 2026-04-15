@@ -517,9 +517,9 @@ jobs:
             const reviewBody = [
               '## 🚀 PRo - PR Optimiser Analysis Report',
               '',
-              '**Status**: ⚠️ **Security Issues Detected** - Review required',
+              totalCount > 0 ? '**Status**: ⚠️ **Security Issues Detected** - Review required' : '**Status**: ✅ **No Security Issues**',
               '',
-              'This PR contains **9 security vulnerabilities** including 5 CRITICAL and 2 HIGH severity issues that should be addressed.',
+              totalCount > 0 ? `This PR contains **${totalCount} security vulnerabilit${totalCount === 1 ? 'y' : 'ies'}** that should be addressed.` : 'No security issues detected in the files changed by this PR.',
               '',
               summary,
               '',
@@ -533,47 +533,66 @@ jobs:
               '- Correlation ID: `' + correlationId + '`',
               '- Files Changed: ' + fileCount,
               '- Lines: +' + additions + ' / -' + deletions,
-              '- Security Scan: FAILED',
-              '- Total Vulnerabilities: 9',
-              '- CRITICAL: 5 | HIGH: 2 | MEDIUM: 2',
+              '- Security Scan: ' + (totalCount > 0 ? 'FAILED' : 'PASSED'),
+              '- Total Vulnerabilities: ' + totalCount,
+              totalCount > 0 ? `- CRITICAL: ${criticalCount} | HIGH: ${highCount} | MEDIUM: ${mediumCount}` : '',
               '',
               '</details>',
-              '',
-              '---',
-              '',
-              '## 🛡️ Security Vulnerabilities Summary',
-              '',
-              '### Critical Severity (5)',
-              '',
-              '| Severity | Vulnerability | CVSS | File | Line | Inline Fix |',
-              '|----------|--------------|------|------|------|------------|',
-              '| 🔴 CRITICAL | Code Injection (eval) | 9.8 | `srv/product-service.js` | 52 | ✅ Posted |',
-              '| 🔴 CRITICAL | SQL Injection | 9.1 | `srv/analytics-service.js` | 17-18 | ✅ Posted |',
-              '| 🔴 CRITICAL | Command Injection | 9.8 | `srv/analytics-service.js` | 32 | ✅ Posted |',
-              '| 🔴 CRITICAL | Information Disclosure (env vars) | 9.1 | `srv/analytics-service.js` | 71 | ✅ Posted |',
-              '| 🔴 CRITICAL | Hardcoded Credentials | 9.8 | `srv/config.js` | 10-13 | ✅ Posted |',
-              '',
-              '### High Severity (2)',
-              '',
-              '| Severity | Vulnerability | CVSS | File | Line | Inline Fix |',
-              '|----------|--------------|------|------|------|------------|',
-              '| 🟠 HIGH | Hardcoded API Keys | 8.2 | `srv/config.js` | 18-23 | ✅ Posted |',
-              '| 🟠 HIGH | Missing Authentication | 8.2 | `srv/analytics-service.js` | 46 | ✅ Posted |',
-              '',
-              '### Medium Severity (2)',
-              '',
-              '| Severity | Vulnerability | CVSS | File | Line | Inline Fix |',
-              '|----------|--------------|------|------|------|------------|',
-              '| 🟡 MEDIUM | XSS Vulnerability | 7.5 | `srv/product-service.js` | 32 | ✅ Posted |',
-              '| 🟡 MEDIUM | Information Disclosure (logs) | 5.3 | `srv/product-service.js` | 120 | ✅ Posted |',
-              '',
-              '> **💡 How to view inline fixes:**  ',
-              '> Go to the **Files changed** tab above. Each vulnerability has an inline comment with a **"Commit suggestion"** button you can click to apply the fix.',
-              '',
-              '---',
-              '',
-              '*🤖 PRo analysis complete. View inline commit suggestions in the **Files changed** tab to fix each vulnerability. Each suggestion can be committed directly with one click!*'
-            ].join('\n');
+              ''
+            ];
+
+            // Add security vulnerabilities table only if there are vulnerabilities
+            if (totalCount > 0) {
+              reviewBody.push('---', '', '## 🛡️ Security Vulnerabilities Summary', '');
+
+              // Critical vulnerabilities
+              const criticalVulns = vulnerabilities.filter(v => v.severity === 'CRITICAL');
+              if (criticalVulns.length > 0) {
+                reviewBody.push(`### Critical Severity (${criticalVulns.length})`, '');
+                reviewBody.push('| Severity | Vulnerability | CVSS | File | Line | Inline Fix |');
+                reviewBody.push('|----------|--------------|------|------|------|------------|');
+                criticalVulns.forEach(v => {
+                  reviewBody.push(`| 🔴 CRITICAL | ${v.name} | ${v.cvss} | \`${v.file}\` | ${v.line} | ${v.posted ? '✅ Posted' : '❌ Not posted'} |`);
+                });
+                reviewBody.push('');
+              }
+
+              // High vulnerabilities
+              const highVulns = vulnerabilities.filter(v => v.severity === 'HIGH');
+              if (highVulns.length > 0) {
+                reviewBody.push(`### High Severity (${highVulns.length})`, '');
+                reviewBody.push('| Severity | Vulnerability | CVSS | File | Line | Inline Fix |');
+                reviewBody.push('|----------|--------------|------|------|------|------------|');
+                highVulns.forEach(v => {
+                  reviewBody.push(`| 🟠 HIGH | ${v.name} | ${v.cvss} | \`${v.file}\` | ${v.line} | ${v.posted ? '✅ Posted' : '❌ Not posted'} |`);
+                });
+                reviewBody.push('');
+              }
+
+              // Medium vulnerabilities
+              const mediumVulns = vulnerabilities.filter(v => v.severity === 'MEDIUM');
+              if (mediumVulns.length > 0) {
+                reviewBody.push(`### Medium Severity (${mediumVulns.length})`, '');
+                reviewBody.push('| Severity | Vulnerability | CVSS | File | Line | Inline Fix |');
+                reviewBody.push('|----------|--------------|------|------|------|------------|');
+                mediumVulns.forEach(v => {
+                  reviewBody.push(`| 🟡 MEDIUM | ${v.name} | ${v.cvss} | \`${v.file}\` | ${v.line} | ${v.posted ? '✅ Posted' : '❌ Not posted'} |`);
+                });
+                reviewBody.push('');
+              }
+
+              reviewBody.push('> **💡 How to view inline fixes:**  ');
+              reviewBody.push('> Go to the **Files changed** tab above. Each vulnerability has an inline comment with a **"Commit suggestion"** button you can click to apply the fix.');
+              reviewBody.push('');
+            }
+
+            reviewBody.push('---', '');
+            reviewBody.push(totalCount > 0
+              ? '*🤖 PRo analysis complete. View inline commit suggestions in the **Files changed** tab to fix each vulnerability.*'
+              : '*🤖 PRo analysis complete. No security issues found in the files changed by this PR.*'
+            );
+
+            const finalReviewBody = reviewBody.join('\n');
 
             // Delete old comments from previous runs
             const { data: comments } = await github.rest.issues.listComments({
