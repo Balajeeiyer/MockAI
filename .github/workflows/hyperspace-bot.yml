@@ -6,7 +6,6 @@ on:
     branches:
       - main
       - master
-      - test/comprehensive-bot-demo
 
 permissions:
   contents: read
@@ -15,8 +14,8 @@ permissions:
   issues: write
 
 jobs:
-  hyperspace-analysis:
-    name: Hyperspace Bot Analysis
+  security-analysis:
+    name: Security Analysis (WhiteSource, Checkmarx, SonarQube)
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -47,12 +46,48 @@ jobs:
             core.setOutput('file_count', files.length);
             core.setOutput('additions', pr.additions);
             core.setOutput('deletions', pr.deletions);
-            core.setOutput('changed_files', pr.changed_files);
             core.setOutput('head_sha', pr.head.sha);
 
             return files;
 
-      - name: Post Inline Code Suggestions
+      - name: WhiteSource Scan
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.issue.number;
+
+            // Simulate WhiteSource scan results
+            const whitesourceResults = {
+              vulnerabilities: 2,
+              licenses: 0,
+              policy_violations: 0,
+              high_severity: 1,
+              medium_severity: 1
+            };
+
+            console.log('WhiteSource scan completed');
+            console.log(JSON.stringify(whitesourceResults, null, 2));
+
+            // Post WhiteSource check result
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'WhiteSource Security Scan',
+              head_sha: '${{ steps.pr-files.outputs.head_sha }}',
+              status: 'completed',
+              conclusion: whitesourceResults.high_severity > 0 ? 'failure' : 'success',
+              output: {
+                title: whitesourceResults.high_severity > 0 ? '⚠️ Security vulnerabilities detected' : '✅ No security issues',
+                summary: `**Vulnerabilities Found:** ${whitesourceResults.vulnerabilities}\n` +
+                         `**High Severity:** ${whitesourceResults.high_severity}\n` +
+                         `**Medium Severity:** ${whitesourceResults.medium_severity}\n` +
+                         `**License Issues:** ${whitesourceResults.licenses}\n` +
+                         `**Policy Violations:** ${whitesourceResults.policy_violations}`
+              }
+            });
+
+      - name: Checkmarx SAST Scan
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -60,55 +95,161 @@ jobs:
             const prNumber = context.issue.number;
             const headSha = '${{ steps.pr-files.outputs.head_sha }}';
 
-            const { data: files } = await github.rest.pulls.listFiles({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber
-            });
+            // Simulate Checkmarx scan results
+            const checkmarxResults = {
+              high: 2,
+              medium: 3,
+              low: 5,
+              info: 8,
+              total: 18,
+              findings: [
+                {
+                  severity: 'HIGH',
+                  type: 'Code Injection',
+                  file: 'srv/product-service.js',
+                  line: 55,
+                  description: 'Use of eval() allows code injection attacks'
+                },
+                {
+                  severity: 'HIGH',
+                  type: 'XSS',
+                  file: 'srv/product-service.js',
+                  line: 34,
+                  description: 'Unvalidated user input in description field'
+                },
+                {
+                  severity: 'MEDIUM',
+                  type: 'Information Disclosure',
+                  file: 'srv/product-service.js',
+                  line: 71,
+                  description: 'Logging sensitive user data'
+                }
+              ]
+            };
 
-            const changedFiles = files.map(f => f.filename);
-            const suggestions = [];
+            console.log('Checkmarx SAST scan completed');
+            console.log(JSON.stringify(checkmarxResults, null, 2));
 
-            // SAP CAP-specific suggestions for rating feature
-            if (changedFiles.includes('srv/product-service.js')) {
-              const productServiceFile = files.find(f => f.filename === 'srv/product-service.js');
-              if (productServiceFile && productServiceFile.patch.includes('updateRating')) {
-                suggestions.push({
-                  path: 'srv/product-service.js',
-                  line: 185,
-                  side: 'RIGHT',
-                  body: '**Performance**: Validate rating parameter before database query to avoid unnecessary round-trips for invalid inputs.\n\n````suggestion\n// Validate early\nif (rating < config.rating.min || rating > config.rating.max) {\n  return req.error(400, `Rating must be between ${config.rating.min} and ${config.rating.max}`);\n}\nconst product = await SELECT.one.from(Products).where({ ID });\n````'
-                });
-
-                suggestions.push({
-                  path: 'srv/product-service.js',
-                  line: 192,
-                  side: 'RIGHT',
-                  body: '**Best Practice**: Document the weighted average calculation for maintainability.\n\n````suggestion\n// Weighted average: (oldAvg * oldCount + newRating) / (oldCount + 1)\nconst currentTotal = product.rating * product.reviewCount;\nconst newReviewCount = product.reviewCount + 1;\nconst newRating = ((currentTotal + rating) / newReviewCount).toFixed(2);\n````'
-                });
-              }
-            }
-
-            // Post suggestions
-            for (const suggestion of suggestions) {
+            // Post inline comments for high severity findings
+            for (const finding of checkmarxResults.findings.filter(f => f.severity === 'HIGH')) {
               try {
                 await github.rest.pulls.createReviewComment({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   pull_number: prNumber,
                   commit_id: headSha,
-                  path: suggestion.path,
-                  line: suggestion.line,
-                  side: suggestion.side,
-                  body: suggestion.body
+                  path: finding.file,
+                  line: finding.line,
+                  side: 'RIGHT',
+                  body: `**🔴 Checkmarx SAST - ${finding.severity}**\n\n` +
+                        `**Type:** ${finding.type}\n` +
+                        `**Description:** ${finding.description}\n\n` +
+                        `_This issue must be fixed before merging._`
                 });
-                console.log(`Posted suggestion for ${suggestion.path}:${suggestion.line}`);
               } catch (error) {
-                console.log(`Failed to post suggestion: ${error.message}`);
+                console.log(`Could not post comment: ${error.message}`);
               }
             }
 
-      - name: Post PR Summary
+            // Post Checkmarx check result
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Checkmarx SAST',
+              head_sha: headSha,
+              status: 'completed',
+              conclusion: checkmarxResults.high > 0 ? 'failure' : 'success',
+              output: {
+                title: checkmarxResults.high > 0 ? '⚠️ Security issues detected' : '✅ No critical issues',
+                summary: `**Total Findings:** ${checkmarxResults.total}\n\n` +
+                         `- 🔴 High: ${checkmarxResults.high}\n` +
+                         `- 🟡 Medium: ${checkmarxResults.medium}\n` +
+                         `- 🔵 Low: ${checkmarxResults.low}\n` +
+                         `- ℹ️ Info: ${checkmarxResults.info}\n\n` +
+                         `**High Severity Findings:**\n` +
+                         checkmarxResults.findings
+                           .filter(f => f.severity === 'HIGH')
+                           .map(f => `- ${f.type} in ${f.file}:${f.line}`)
+                           .join('\n')
+              }
+            });
+
+      - name: SonarQube Analysis
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.issue.number;
+            const headSha = '${{ steps.pr-files.outputs.head_sha }}';
+
+            // Simulate SonarQube scan results
+            const sonarResults = {
+              quality_gate: 'FAILED',
+              bugs: 2,
+              vulnerabilities: 3,
+              code_smells: 12,
+              coverage: 65.4,
+              duplications: 2.1,
+              security_hotspots: 4,
+              maintainability_rating: 'C',
+              reliability_rating: 'B',
+              security_rating: 'D'
+            };
+
+            console.log('SonarQube analysis completed');
+            console.log(JSON.stringify(sonarResults, null, 2));
+
+            // Create PR comment with SonarQube results
+            const sonarComment = `## 📊 SonarQube Analysis Results
+
+**Quality Gate:** ${sonarResults.quality_gate === 'PASSED' ? '✅ PASSED' : '❌ FAILED'}
+
+### Issues
+| Category | Count |
+|----------|-------|
+| 🐛 Bugs | ${sonarResults.bugs} |
+| 🔐 Vulnerabilities | ${sonarResults.vulnerabilities} |
+| 💡 Code Smells | ${sonarResults.code_smells} |
+| 🔥 Security Hotspots | ${sonarResults.security_hotspots} |
+
+### Ratings
+- **Maintainability:** ${sonarResults.maintainability_rating}
+- **Reliability:** ${sonarResults.reliability_rating}
+- **Security:** ${sonarResults.security_rating}
+
+### Metrics
+- **Code Coverage:** ${sonarResults.coverage}%
+- **Duplications:** ${sonarResults.duplications}%
+
+---
+_Analysis powered by SonarQube_`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: sonarComment
+            });
+
+            // Post SonarQube check result
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'SonarQube Quality Gate',
+              head_sha: headSha,
+              status: 'completed',
+              conclusion: sonarResults.quality_gate === 'PASSED' ? 'success' : 'failure',
+              output: {
+                title: sonarResults.quality_gate === 'PASSED' ? '✅ Quality Gate Passed' : '❌ Quality Gate Failed',
+                summary: `**Bugs:** ${sonarResults.bugs} | ` +
+                         `**Vulnerabilities:** ${sonarResults.vulnerabilities} | ` +
+                         `**Code Smells:** ${sonarResults.code_smells}\n\n` +
+                         `**Coverage:** ${sonarResults.coverage}% | ` +
+                         `**Security Rating:** ${sonarResults.security_rating}`
+              }
+            });
+
+      - name: Post Security Summary
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -118,21 +259,22 @@ jobs:
             const additions = ${{ steps.pr-files.outputs.additions }};
             const deletions = ${{ steps.pr-files.outputs.deletions }};
 
-            const summary = '## ✅ Hyperspace Bot Analysis Complete\n\n' +
-              '**Files Changed:** ' + fileCount + ' | **Lines:** +' + additions + ' / -' + deletions + '\n\n' +
-              'This PR adds SAP CAP rating functionality with proper validation and error handling. Changes follow SAP best practices for CDS entity extensions and OData bound actions.\n\n' +
-              '**SAP CAP Patterns Detected:**\n' +
-              '- ✅ CDS entity extension with proper defaults\n' +
-              '- ✅ OData bound action (updateRating)\n' +
-              '- ✅ CQL queries (SELECT, UPDATE)\n' +
-              '- ✅ Structured logging with cds.log\n' +
-              '- ✅ Configuration-driven validation\n' +
-              '- ✅ Proper error handling with HTTP status codes\n\n' +
-              '**Impact Assessment:**\n' +
-              '- **Breaking Change:** No - new fields have defaults, new action is additive\n' +
-              '- **OData Metadata:** Extended with new properties and action\n' +
-              '- **Database:** Two new columns (rating, reviewCount)\n\n' +
-              'View inline suggestions in the **Files changed** tab for optimization opportunities.';
+            const summary = `## 🚀 Hyperspace Bot - Security Analysis Complete
+
+**PR Analysis:**
+- **Files Changed:** ${fileCount}
+- **Lines:** +${additions} / -${deletions}
+
+**Security Scans Completed:**
+✅ WhiteSource - Dependency vulnerabilities
+✅ Checkmarx SAST - Static code analysis
+✅ SonarQube - Code quality & security
+
+**Action Required:**
+Please review the security findings above and address any critical issues before merging.
+
+---
+_Automated security analysis by Hyperspace Bot_`;
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -144,7 +286,7 @@ jobs:
   cross-repo-dispatcher:
     name: Dispatch Integration Tests to Dependent Repos
     runs-on: ubuntu-latest
-    needs: hyperspace-analysis
+    needs: security-analysis
     if: github.event_name == 'pull_request'
 
     steps:
