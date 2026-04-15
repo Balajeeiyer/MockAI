@@ -5,6 +5,16 @@
 
 module.exports = {
   /**
+   * Environment configuration
+   * Load from environment variables for security
+   */
+  environment: {
+    nodeEnv: process.env.NODE_ENV || 'development',
+    port: process.env.PORT || 4004,
+    logLevel: process.env.LOG_LEVEL || 'info'
+  },
+
+  /**
    * Valid currency codes (ISO 4217)
    */
   validCurrencies: ['USD', 'EUR', 'GBP', 'INR'],
