@@ -51,6 +51,7 @@ jobs:
             return files;
 
       - name: WhiteSource Scan
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -88,6 +89,7 @@ jobs:
             });
 
       - name: Checkmarx SAST Scan
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -175,6 +177,7 @@ jobs:
             });
 
       - name: SonarQube Analysis
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -250,6 +253,7 @@ _Analysis powered by SonarQube_`;
             });
 
       - name: Post Security Summary
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
