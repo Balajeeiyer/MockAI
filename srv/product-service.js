@@ -123,12 +123,16 @@ module.exports = cds.service.impl(async function () {
 
       await UPDATE(Products).set({ stock: newStock }).where({ ID });
 
+      // SECURITY ISSUE: Information Disclosure - Logging sensitive user data (Line 126)
+      // Logging entire user context including potentially sensitive information
       LOG.info('Stock updated', {
         productId: ID,
         productName: product.name,
         oldStock: product.stock,
         newStock,
-        userId: req.user?.id
+        userId: req.user?.id,
+        userContext: req.user, // MEDIUM: Logs entire user object with sensitive data
+        sessionData: req._.req.session // MEDIUM: Logs session information
       });
 
       return await SELECT.one.from(Products).where({ ID });
