@@ -59,9 +59,89 @@ jobs:
             const prNumber = context.issue.number;
             const headSha = '${{ steps.pr-files.outputs.head_sha }}';
 
-            // Define suggestions for specific lines
-            const suggestions = [
-              {
+            // Get PR files to determine what changed
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+
+            const changedFiles = files.map(f => f.filename);
+            const suggestions = [];
+
+            // Generate suggestions based on changed files
+            if (changedFiles.includes('srv/product-service.js')) {
+              // Check if rating feature was added
+              const productServiceFile = files.find(f => f.filename === 'srv/product-service.js');
+              if (productServiceFile && productServiceFile.patch.includes('updateRating')) {
+                suggestions.push({
+                  path: 'srv/product-service.js',
+                  line: 140,
+                  side: 'RIGHT',
+                  body: [
+                    '**Performance**: Consider adding input validation before database query',
+                    '',
+                    'The rating validation happens after fetching the product from the database. For invalid ratings, this wastes a database round-trip.',
+                    '',
+                    'Consider validating the rating parameter before the SELECT query:',
+                    '````suggestion',
+                    '    // Validate rating range early to avoid unnecessary DB queries',
+                    '    if (rating === undefined || rating === null) {',
+                    '      return req.error(400, \'Rating is required\', \'rating\');',
+                    '    }',
+                    '    if (rating < config.rating.min || rating > config.rating.max) {',
+                    '      return req.error(400, `Rating must be between ${config.rating.min} and ${config.rating.max}`, \'rating\');',
+                    '    }',
+                    '',
+                    '    const product = await SELECT.one.from(Products).where({ ID });',
+                    '````',
+                    '_This optimization validates input before database access, improving performance for invalid requests._',
+                    '<!-- PR-Bot Feedback-Section-Start -->',
+                    '---',
+                    '_Please provide feedback on the review comment by checking the appropriate box:_',
+                    '',
+                    '- [ ] <!-- PR-Bot Feedback Awesome --> 🌟 Awesome comment, a human might have missed that.',
+                    '- [ ] <!-- PR-Bot Feedback Helpful --> ✅ Helpful comment',
+                    '- [ ] <!-- PR-Bot Feedback Neutral --> 🤷 Neutral',
+                    '- [ ] <!-- PR-Bot Feedback Not helpful --> ❌ This comment is not helpful<!-- PR-Bot Feedback-Section-End -->'
+                  ].join('\n')
+                });
+
+                suggestions.push({
+                  path: 'srv/product-service.js',
+                  line: 147,
+                  side: 'RIGHT',
+                  body: [
+                    '**Best Practice**: Add JSDoc documentation for calculation logic',
+                    '',
+                    'The weighted average calculation is straightforward but could benefit from documentation explaining the algorithm.',
+                    '',
+                    'Consider adding inline documentation:',
+                    '````suggestion',
+                    '      // Calculate weighted average rating',
+                    '      // Formula: newAvg = (oldAvg * oldCount + newRating) / (oldCount + 1)',
+                    '      // This maintains a running average without storing individual ratings',
+                    '      const currentTotal = product.rating * product.reviewCount;',
+                    '      const newReviewCount = product.reviewCount + 1;',
+                    '      const newRating = ((currentTotal + rating) / newReviewCount).toFixed(2);',
+                    '````',
+                    '_Documentation helps future maintainers understand the business logic without reverse-engineering._',
+                    '<!-- PR-Bot Feedback-Section-Start -->',
+                    '---',
+                    '_Please provide feedback on the review comment by checking the appropriate box:_',
+                    '',
+                    '- [ ] <!-- PR-Bot Feedback Awesome --> 🌟 Awesome comment, a human might have missed that.',
+                    '- [ ] <!-- PR-Bot Feedback Helpful --> ✅ Helpful comment',
+                    '- [ ] <!-- PR-Bot Feedback Neutral --> 🤷 Neutral',
+                    '- [ ] <!-- PR-Bot Feedback Not helpful --> ❌ This comment is not helpful<!-- PR-Bot Feedback-Section-End -->'
+                  ].join('\n')
+                });
+              }
+            }
+
+            // Fallback suggestions if no specific suggestions generated
+            if (suggestions.length === 0 && changedFiles.includes('srv/product-service.js')) {
+              suggestions.push({
                 path: 'srv/product-service.js',
                 line: 30,
                 side: 'RIGHT',
