@@ -51,6 +51,16 @@ npm run lint:fix
 
 ## Architecture Overview
 
+### Product Entity Extensions (Recent)
+
+The Products entity has been enhanced with additional fields:
+- **sku**: Product SKU/identifier (String, max 50 chars)
+- **minimumOrderQuantity**: Minimum order quantity (Integer, default 1, range 1-10,000)
+- **bulkPriceUpdate**: Custom action for updating prices across multiple products
+- **advancedSearch**: Custom function with filters for name, category, price range, stock level
+
+These additions support bulk operations and advanced filtering capabilities.
+
 ### Backend Architecture
 
 The backend follows **SAP CAP's three-tier architecture**:
@@ -67,7 +77,7 @@ The backend follows **SAP CAP's three-tier architecture**:
 
 3. **Custom Logic Patterns**
    - **Before handlers**: Validation logic (price, stock, currency, name length)
-   - **After handlers**: Computed fields (stockStatus, formattedPrice), business logic
+   - **After handlers**: Computed fields (stockStatus, available, formattedPrice), business logic
    - **Custom actions**: updateStock, toggleActive (bound to Products entity)
    - **Custom functions**: getLowStockProducts, calculateOrderTotal (unbound operations)
 
@@ -123,8 +133,8 @@ this.on('updateStock', Products, async (req) => { /* custom action */ });
 ### OData V4 Features
 
 - **Draft Mode**: Enabled on all writable entities (`@odata.draft.enabled`)
-- **Actions**: Bound to entity instances (updateStock, toggleActive)
-- **Functions**: Unbound operations (getLowStockProducts, calculateOrderTotal)
+- **Actions**: Bound to entity instances (updateStock, toggleActive, bulkPriceUpdate)
+- **Functions**: Unbound operations (getLowStockProducts, calculateOrderTotal, advancedSearch)
 - **Analytics**: Aggregated views (ProductAnalytics with group by)
 
 ## Testing
@@ -142,7 +152,9 @@ this.on('updateStock', Products, async (req) => { /* custom action */ });
 - **Line endings**: Unix (LF)
 - **Console logs**: Warning level (use logging framework in production)
 
-## AI-Powered PR Reviews
+## AI-Powered PR Reviews & Cross-Repository Testing
+
+### Hyperspace Bot
 
 This repository uses **Hyperspace Bot** for automated PR analysis:
 
@@ -151,6 +163,20 @@ This repository uses **Hyperspace Bot** for automated PR analysis:
 - Generates detailed comments with file locations, line numbers, and specific fixes
 - Adds labels: `hyperspace-analyzed`, `ready-to-merge`, `needs-fixes`, `security-review`
 - See `.github/HYPERSPACE_BOT.md` for details
+
+### Cross-Repository Integration Testing
+
+When PRs modify API-related files (`srv/product-service.cds`, `srv/product-service.js`, `db/schema.cds`), the workflow automatically:
+
+1. Detects API changes
+2. Dispatches integration test events to dependent repositories (configured in `.github/dependent-repos.yml`)
+3. Reports results back to the PR via comments and GitHub Checks
+
+**Configuration**: Requires `CROSS_REPO_TOKEN` secret (Personal Access Token with `repo` scope)
+- Without token: Graceful degradation with setup instructions
+- With token: Full bidirectional communication between repositories
+
+**Dependent repositories**: OrderService (`Balajeeiyer/OrderService`) - integration tests for Products API endpoints
 
 ## Database
 
@@ -187,4 +213,20 @@ This repository uses **Hyperspace Bot** for automated PR analysis:
 - `srv/product-service.js`: Business logic implementation
 - `app/products/manifest.json`: UI5 app configuration
 - `package.json`: Dependencies and CAP configuration
-- `.github/workflows/hyperspace-bot.yml`: PR automation workflow
+- `.github/workflows/hyperspace-bot.yml`: PR automation workflow with cross-repo integration
+- `.github/dependent-repos.yml`: Cross-repository testing configuration
+
+## Security & Authentication
+
+### CROSS_REPO_TOKEN Setup
+
+For cross-repository integration testing, configure a Personal Access Token:
+
+1. Create GitHub PAT with `repo` scope (access to private/public repositories)
+2. Add as repository secret: `CROSS_REPO_TOKEN`
+3. Token enables:
+   - Dispatching integration tests to dependent repositories (MockAI → OrderService)
+   - Posting results back to source PR (OrderService → MockAI)
+   - Creating GitHub Checks on commits
+
+Without this token, the workflow provides graceful degradation with setup instructions in PR comments.
