@@ -101,33 +101,38 @@ module.exports = cds.service.impl(async function () {
     const { ID } = req.params[0];
     const { quantity } = req.data;
 
-    // SECURITY ISSUE: SQL Injection vulnerability
-    // Using string concatenation for query instead of parameterized query
-    const product = await SELECT.one.from(Products).where({ ID });
+    try {
+      const product = await SELECT.one.from(Products).where({ ID });
 
-    if (!product) {
-      return req.error(404, `Product ${ID} not found`);
+      if (!product) {
+        return req.error(404, `Product ${ID} not found`);
+      }
+
+      const newStock = product.stock + quantity;
+
+      if (newStock < config.stock.min) {
+        return req.error(400, `Cannot reduce stock below ${config.stock.min}`);
+      }
+
+      if (newStock > config.stock.max) {
+        return req.error(400, `Stock would exceed maximum (${config.stock.max})`);
+      }
+
+      await UPDATE(Products).set({ stock: newStock }).where({ ID });
+
+      LOG.info('Stock updated', {
+        productId: ID,
+        productName: product.name,
+        oldStock: product.stock,
+        newStock,
+        userId: req.user?.id
+      });
+
+      return await SELECT.one.from(Products).where({ ID });
+    } catch (error) {
+      LOG.error('Failed to update stock', { ID, quantity, error: error.message });
+      return req.error(500, 'Failed to update product stock');
     }
-
-    const newStock = product.stock + quantity;
-
-    if (newStock < 0) {
-      return req.error(400, 'Cannot reduce stock below zero');
-    }
-
-    // CODE QUALITY: No error handling for database operation
-    await UPDATE(Products).set({ stock: newStock }).where({ ID });
-
-    // SECURITY ISSUE: Sensitive information in logs
-    LOG.info('Stock updated', {
-      productId: ID,
-      productName: product.name,
-      oldStock: product.stock,
-      newStock,
-      userId: req.user?.id
-    });
-
-    return SELECT.one.from(Products).where({ ID });
   });
 
   /**
@@ -137,24 +142,29 @@ module.exports = cds.service.impl(async function () {
   this.on('toggleActive', Products, async (req) => {
     const { ID } = req.params[0];
 
-    const product = await SELECT.one.from(Products).where({ ID });
+    try {
+      const product = await SELECT.one.from(Products).where({ ID });
 
-    if (!product) {
-      return req.error(404, `Product ${ID} not found`);
+      if (!product) {
+        return req.error(404, `Product ${ID} not found`);
+      }
+
+      const newStatus = !product.isActive;
+
+      await UPDATE(Products).set({ isActive: newStatus }).where({ ID });
+
+      LOG.info('Product active status toggled', {
+        productId: ID,
+        productName: product.name,
+        oldStatus: product.isActive,
+        newStatus
+      });
+
+      return await SELECT.one.from(Products).where({ ID });
+    } catch (error) {
+      LOG.error('Failed to toggle active status', { ID, error: error.message });
+      return req.error(500, 'Failed to update product status');
     }
-
-    const newStatus = !product.isActive;
-
-    await UPDATE(Products).set({ isActive: newStatus }).where({ ID });
-
-    LOG.info('Product active status toggled', {
-      productId: ID,
-      productName: product.name,
-      oldStatus: product.isActive,
-      newStatus
-    });
-
-    return SELECT.one.from(Products).where({ ID });
   });
 
   /**
@@ -218,14 +228,19 @@ module.exports = cds.service.impl(async function () {
    * Calculates order total
    */
   this.after('CREATE', Orders, async (order) => {
-    if (order.items && order.items.length > 0) {
-      const total = order.items.reduce((sum, item) => {
-        return sum + (item.price * item.quantity);
-      }, 0);
+    try {
+      if (order.items && order.items.length > 0) {
+        const total = order.items.reduce((sum, item) => {
+          return sum + (item.price * item.quantity);
+        }, 0);
 
-      await UPDATE(Orders).set({ totalAmount: total }).where({ ID: order.ID });
+        await UPDATE(Orders).set({ totalAmount: total }).where({ ID: order.ID });
 
-      LOG.info('Order created with total', { orderNumber: order.orderNumber, total });
+        LOG.info('Order created with total', { orderNumber: order.orderNumber, total });
+      }
+    } catch (error) {
+      LOG.error('Failed to calculate order total', { orderId: order.ID, error: error.message });
+      // Don't fail the order creation, just log the error
     }
   });
 });
