@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - master
+      - test/comprehensive-bot-demo
 
 permissions:
   contents: read
