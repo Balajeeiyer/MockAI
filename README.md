@@ -2,7 +2,7 @@
 
 A full-stack product management application built with SAP Cloud Application Programming Model (CAP) and SAPUI5.
 
-🚀 **Powered by Hyperspace Bot** - Automated AI PR reviews with multi-agent analysis and auto-assignment. [Learn more](.github/HYPERSPACE_BOT.md)
+🚀 **Powered by PRo (PR Optimiser)** - Automated AI PR reviews with multi-agent analysis, security scanning, and intelligent merge conflict resolution. [Learn more](.github/PRO_BOT.md)
 
 ## Features
 
