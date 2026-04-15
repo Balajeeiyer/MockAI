@@ -1,6 +1,11 @@
 name: 🚀 PRo - PR Optimiser (Merge Conflicts)
 
 on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+      - master
   pull_request:
     types: [opened, synchronize, reopened]
     branches:
@@ -237,58 +242,49 @@ jobs:
               summaryBody += `  - ${analysis.strategy.description}\n\n`;
             }
 
-            // Add detailed inline resolution suggestions section
+            // Add commit suggestions for each conflict
             if (conflictAnalysis.length > 0) {
               summaryBody += `
-            ### 🔧 Inline Resolution Suggestions
+            ### 💡 Resolution Suggestions
 
             `;
 
               for (let i = 0; i < conflictAnalysis.length; i++) {
                 const analysis = conflictAnalysis[i];
-                const suggestion = inlineSuggestions[i];
 
-                if (suggestion) {
-                  summaryBody += `
+                summaryBody += `
             <details>
-            <summary><strong>📍 ${analysis.file}:${analysis.startLine}</strong> - ${analysis.strategy.name}</summary>
+            <summary><strong>\`${analysis.file}\` (Line ${analysis.startLine})</strong></summary>
 
-            ${suggestion.body}
+            **Strategy**: ${analysis.strategy.name}
+
+            **Your branch**:
+            \`\`\`javascript
+            ${analysis.currentBranch.slice(0, 10).join('\n')}${analysis.currentBranch.length > 10 ? '\n...' : ''}
+            \`\`\`
+
+            **Main branch**:
+            \`\`\`javascript
+            ${analysis.baseBranch.slice(0, 10).join('\n')}${analysis.baseBranch.length > 10 ? '\n...' : ''}
+            \`\`\`
+
+            **Commit Command**:
+            \`\`\`bash
+            # Edit ${analysis.file}, resolve conflict, then:
+            git add ${analysis.file}
+            git commit -m "fix: resolve merge conflict in ${analysis.file}"
+            \`\`\`
 
             </details>
-
             `;
-                }
               }
             }
 
             summaryBody += `
-            ### 🔧 How to Resolve Locally
-
-            If you prefer to resolve conflicts locally:
-
-            \`\`\`bash
-            # Fetch latest changes
-            git fetch origin ${baseRef}
-
-            # Merge base branch into your branch
-            git merge origin/${baseRef}
-
-            # Resolve conflicts in your editor
-            # Then stage and commit
-            git add .
-            git commit -m "fix: resolve merge conflicts with ${baseRef}"
-            git push
-            \`\`\`
-
-            ### 📚 Resources
-
-            - [GitHub: Resolving merge conflicts](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts)
-            - [Git merge conflict resolution](https://git-scm.com/book/en/v2/Git-Branching-Basic-Branching-and-Merging)
 
             ---
 
-            *🤖 PRo detected merge conflicts • Review inline suggestions in Files changed tab*
+            *🤖 PRo Merge Conflict Detection • Resolve conflicts and push*
             `;
 
             await github.rest.issues.createComment({
