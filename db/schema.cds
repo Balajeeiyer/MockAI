@@ -13,7 +13,7 @@ entity Products : cuid, managed {
       currency    : String(3) default 'USD';
       stock       : Integer default 0;
       rating      : Decimal(3, 2) default 0.00;  // Product rating (0.00 - 5.00)
-      reviewCount : Integer default 0;           // Number of reviews
+      reviewCount : Integer default 0;           // Total number of customer reviews
       category    : Association to Categories;
       supplier    : Association to Suppliers;
       isActive    : Boolean default true;
