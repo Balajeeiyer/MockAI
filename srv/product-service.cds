@@ -69,6 +69,39 @@ service ProductService @(path: '/products') {
    * Function: Calculate order total
    */
   function calculateOrderTotal(orderId : UUID) returns Decimal(10, 2);
+
+  /**
+   * NEW FEATURE: Bulk Price Update
+   * Updates prices for multiple products at once
+   */
+  type PriceUpdateResult {
+    success : Boolean;
+    productsUpdated : Integer;
+    updates : array of {
+      productId : UUID;
+      productName : String;
+      oldPrice : Decimal(10, 2);
+      newPrice : Decimal(10, 2);
+    };
+  };
+
+  function bulkPriceUpdate(
+    productIds : array of UUID,
+    adjustmentType : String,
+    adjustmentValue : Decimal(10, 2)
+  ) returns PriceUpdateResult;
+
+  /**
+   * NEW FEATURE: Advanced Product Search
+   * Search products with multiple filter criteria
+   */
+  function advancedSearch(
+    searchTerm : String,
+    minPrice : Decimal(10, 2),
+    maxPrice : Decimal(10, 2),
+    category : String,
+    inStock : Boolean
+  ) returns array of Products;
 }
 
 /**

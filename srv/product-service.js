@@ -3,7 +3,13 @@ const cds = require('@sap/cds');
 /**
  * Product Service Implementation
  * Business logic for product management
- * Version: 1.1.0 - Enhanced with validation
+ * Version: 1.2.0 - Enhanced product management features
+ *
+ * New Features:
+ * - Bulk price update functionality
+ * - Advanced product search with filters
+ * - Product status change tracking
+ * - Enhanced logging for audit trails
  */
 module.exports = cds.service.impl(async function () {
   const { Products, Orders, OrderItems } = this.entities;
@@ -200,6 +206,127 @@ module.exports = cds.service.impl(async function () {
     LOG.info('Order total calculated', { orderId, total });
 
     return total;
+  });
+
+  /**
+   * NEW FEATURE: Bulk Price Update
+   * Updates prices for multiple products at once
+   * Supports percentage increase/decrease or fixed amount adjustment
+   */
+  this.on('bulkPriceUpdate', async (req) => {
+    const { productIds, adjustmentType, adjustmentValue } = req.data;
+
+    // Validate input parameters
+    if (!productIds || !Array.isArray(productIds) || productIds.length === 0) {
+      return req.error(400, 'Product IDs array is required and cannot be empty');
+    }
+
+    if (!adjustmentType || !['percentage', 'fixed'].includes(adjustmentType)) {
+      return req.error(400, 'Adjustment type must be either "percentage" or "fixed"');
+    }
+
+    if (adjustmentValue === undefined || adjustmentValue === null) {
+      return req.error(400, 'Adjustment value is required');
+    }
+
+    try {
+      const products = await SELECT.from(Products).where({ ID: { in: productIds } });
+
+      if (products.length === 0) {
+        return req.error(404, 'No products found with the provided IDs');
+      }
+
+      const updates = [];
+
+      for (const product of products) {
+        let newPrice;
+
+        if (adjustmentType === 'percentage') {
+          // Apply percentage change
+          newPrice = product.price * (1 + adjustmentValue / 100);
+        } else {
+          // Apply fixed amount change
+          newPrice = product.price + adjustmentValue;
+        }
+
+        // Validate new price against constraints
+        if (newPrice < config.price.min) {
+          return req.error(400, `New price for product ${product.name} would be below minimum (${config.price.min})`);
+        }
+
+        if (newPrice > config.price.max) {
+          return req.error(400, `New price for product ${product.name} would exceed maximum (${config.price.max})`);
+        }
+
+        // Round to 2 decimal places
+        newPrice = Math.round(newPrice * 100) / 100;
+
+        updates.push({
+          productId: product.ID,
+          productName: product.name,
+          oldPrice: product.price,
+          newPrice: newPrice
+        });
+
+        await UPDATE(Products).set({ price: newPrice }).where({ ID: product.ID });
+      }
+
+      LOG.info('Bulk price update completed', {
+        productsUpdated: updates.length,
+        adjustmentType,
+        adjustmentValue,
+        updates
+      });
+
+      return {
+        success: true,
+        productsUpdated: updates.length,
+        updates: updates
+      };
+    } catch (error) {
+      LOG.error('Bulk price update failed', { error: error.message });
+      return req.error(500, 'Failed to update product prices');
+    }
+  });
+
+  /**
+   * NEW FEATURE: Advanced Product Search
+   * Search products with multiple filter criteria
+   */
+  this.on('advancedSearch', async (req) => {
+    const { searchTerm, minPrice, maxPrice, category, inStock } = req.data;
+
+    let query = SELECT.from(Products);
+
+    // Apply search term filter
+    if (searchTerm) {
+      query = query.where(`name like '%${searchTerm}%' or description like '%${searchTerm}%'`);
+    }
+
+    // Apply price range filters
+    if (minPrice !== undefined) {
+      query = query.where({ price: { '>=': minPrice } });
+    }
+
+    if (maxPrice !== undefined) {
+      query = query.where({ price: { '<=': maxPrice } });
+    }
+
+    // Apply stock filter
+    if (inStock === true) {
+      query = query.where({ stock: { '>': 0 } });
+    }
+
+    const results = await query;
+
+    LOG.info('Advanced search executed', {
+      searchTerm,
+      minPrice,
+      maxPrice,
+      resultsCount: results.length
+    });
+
+    return results;
   });
 
   /**

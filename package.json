@@ -1,7 +1,7 @@
 {
   "name": "mock-ai-products",
-  "version": "1.0.0",
-  "description": "SAP CAP + UI5 Product Management Application",
+  "version": "1.2.0",
+  "description": "SAP CAP + UI5 Product Management Application with Enhanced Features",
   "repository": "https://github.tools.sap/I335962/MockAI",
   "license": "ISC",
   "engines": {
@@ -19,7 +19,8 @@
   "dependencies": {
     "@sap/cds": "^7.5.0",
     "@sap/cds-dk": "^7.5.0",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "lodash": "^4.17.20"
   },
   "devDependencies": {
     "@sap/eslint-plugin-cds": "^2.6.3",
