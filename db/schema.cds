@@ -15,6 +15,12 @@ entity Products : cuid, managed {
       category    : Association to Categories;
       supplier    : Association to Suppliers;
       isActive    : Boolean default true;
+
+      // NEW FIELD: Product SKU (Stock Keeping Unit)
+      sku         : String(50);
+
+      // NEW FIELD: Minimum order quantity
+      minOrderQty : Integer default 1;
 }
 
 /**
