@@ -51,82 +51,6 @@ jobs:
 
             return files;
 
-      - name: Post Inline Code Suggestions
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const prNumber = context.issue.number;
-            const headSha = '${{ steps.pr-files.outputs.head_sha }}';
-
-            // Define suggestions for specific lines in actual PR files
-            const suggestions = [
-              {
-                path: 'srv/product-service.cds',
-                line: 15,
-                side: 'RIGHT',
-                body: [
-                  '**💡 SUGGESTION**: Consider adding validation annotations',
-                  '',
-                  'The Products projection could benefit from input validation annotations to ensure data quality.',
-                  '',
-                  '**Enhancement**: Add validation to fields:',
-                  '````suggestion',
-                  '  entity Products as projection on db.Products {',
-                  '    *,',
-                  '    virtual available : Boolean  // Computed field: isActive && stock > 0',
-                  '  } actions {',
-                  '    @(requires: \'authenticated-user\')',
-                  '    action updateStock(quantity : Integer not null) returns Products;',
-                  '````',
-                  '',
-                  '**Benefits**: Stronger type safety and better API documentation',
-                  '---',
-                  '_Feedback appreciated!_'
-                ].join('\n')
-              },
-              {
-                path: 'srv/product-service.js',
-                line: 97,
-                side: 'RIGHT',
-                body: [
-                  '**✅ GOOD PRACTICE**: Virtual field implementation',
-                  '',
-                  'Well done! The `available` field is properly computed as a virtual field combining both active status and stock availability.',
-                  '',
-                  '**Optional Enhancement**: Consider adding this to analytics:',
-                  '```javascript',
-                  '// Track availability changes for reporting',
-                  'product.availabilityChanged = ',
-                  '  product.available !== (product.wasActive && product.previousStock > 0);',
-                  '```',
-                  '',
-                  '**Benefits**: Historical tracking for inventory management',
-                  '---',
-                  '_This is an optional enhancement, current implementation is solid!_'
-                ].join('\n')
-              }
-            ];
-
-            // Post each suggestion as a review comment
-            for (const suggestion of suggestions) {
-              try {
-                await github.rest.pulls.createReviewComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  pull_number: prNumber,
-                  commit_id: headSha,
-                  path: suggestion.path,
-                  line: suggestion.line,
-                  side: suggestion.side,
-                  body: suggestion.body
-                });
-                console.log(`Posted suggestion for ${suggestion.path}:${suggestion.line}`);
-              } catch (error) {
-                console.log(`Failed to post suggestion for ${suggestion.path}:${suggestion.line}`, error.message);
-              }
-            }
-
       - name: Analyze Code and Post Review
         uses: actions/github-script@v7
         with:
@@ -142,7 +66,7 @@ jobs:
             const correlationId = require('crypto').randomUUID();
 
             // Analysis summary
-            const summary = 'This PR adds currency validation logic with hardcoded configuration. It contains input sanitization issues that should be resolved before merging: missing trim/uppercase normalization on currency input (line 28-32 in srv/product-service.js), hardcoded currency list that should be externalized to config, and potential injection vulnerabilities from unvalidated user input.';
+            const summary = `This PR modifies ${fileCount} file(s) with ${additions} additions and ${deletions} deletions. Please review the changes carefully.`;
 
             // Build the consolidated review comment
             const reviewBody = [
@@ -169,41 +93,36 @@ jobs:
               '',
               '## 📊 Analysis Summary',
               '',
-              '### Files Changed',
+              `**PR Title:** ${prTitle}`,
               '',
-              '- `srv/product-service.cds` - Service definitions updated',
-              '- `srv/product-service.js` - Business logic enhanced',
-              '- Additional files may be analyzed in inline comments',
+              `**Files Modified:** ${fileCount}`,
               '',
               '---',
               '',
-              '---',
+              '## ⚖️ Recommendation',
               '',
-              '## ⚖️ Final Recommendation',
-              '',
-              '**Decision:** ✅ **REVIEW RECOMMENDED**',
+              '**Decision:** ✅ **READY FOR REVIEW**',
               '',
               '### Next Steps',
               '',
-              '1. Review the analysis summary above',
-              '2. Check the **Files changed** tab for inline code review comments',
-              '3. Address any findings before merging',
-              '4. Run tests to verify changes: `npm test`',
-              '5. Run linting to check code style: `npm run lint`',
+              '1. Review the code changes in the **Files changed** tab',
+              '2. Ensure all tests pass: `npm test`',
+              '3. Check code style compliance: `npm run lint`',
+              '4. Verify the changes work as expected',
               '',
               '---',
               '',
               '## 📋 PR Checklist',
               '',
               '- [ ] Code changes reviewed',
-              '- [ ] Unit tests updated and passing',
+              '- [ ] Tests are passing',
               '- [ ] Code follows project style guidelines',
               '- [ ] Documentation updated if needed',
-              '- [ ] Ready for code review',
+              '- [ ] Ready for merge',
               '',
               '---',
               '',
-              '*✅ Automated analysis complete. Review the findings above and address any issues before merging.*'
+              '*✅ Automated analysis complete. The PR is ready for human review.*'
             ].join('\n');
 
             // Post the consolidated review
@@ -214,7 +133,7 @@ jobs:
               body: reviewBody
             });
 
-      - name: Request Reviews from Bots
+      - name: Add Labels
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -226,62 +145,151 @@ jobs:
                 repo: context.repo.repo,
                 labels: [
                   'hyperspace-analyzed',
-                  'code-quality-review',
-                  'security-review',
-                  'build-check',
-                  'changes-required'
+                  'ready-for-review'
                 ]
               });
 
-              console.log('Added review stage labels');
+              console.log('Added review labels');
             } catch (error) {
               console.log('Error adding labels:', error.message);
             }
 
-            // Assign PR to author for review
-            try {
-              const prAuthor = context.payload.pull_request.user.login;
+  cross-repo-dispatcher:
+    name: Cross-Repository Integration Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
 
-              await github.rest.issues.addAssignees({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                assignees: [prAuthor]
-              });
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-              console.log('Added ' + prAuthor + ' as assignee');
-            } catch (error) {
-              console.log('Could not add assignee:', error.message);
-            }
-
-            // Request review (using PR author as reviewer for demo)
-            // In production: replace with actual code reviewer usernames
-            try {
-              const prAuthor = context.payload.pull_request.user.login;
-
-              // Note: Can't request review from PR author, so this is for demo only
-              // In production, use actual reviewer usernames
-              console.log('Would request review from code-quality-bot, security-scan-bot, build-analyzer-bot');
-            } catch (error) {
-              console.log('Could not request review:', error.message);
-            }
-
-      - name: Update PR Status
+      - name: Check for API changes
+        id: api-changes
         uses: actions/github-script@v7
-        continue-on-error: true
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+
+            // Check if any API-related files changed
+            const apiFiles = [
+              'srv/product-service.cds',
+              'srv/product-service.js',
+              'db/schema.cds'
+            ];
+
+            const hasApiChanges = files.some(file =>
+              apiFiles.some(apiFile => file.filename.includes(apiFile))
+            );
+
+            console.log('API changes detected:', hasApiChanges);
+            core.setOutput('has_changes', hasApiChanges.toString());
+
+            return hasApiChanges;
+
+      - name: Load dependent repositories config
+        if: steps.api-changes.outputs.has_changes == 'true'
+        id: load-config
+        run: |
+          if [ -f .github/dependent-repos.yml ]; then
+            echo "config_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "config_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Dispatch integration tests
+        if: steps.api-changes.outputs.has_changes == 'true' && steps.load-config.outputs.config_exists == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.CROSS_REPO_TOKEN || secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const yaml = require('js-yaml');
+
+            // Check if we have a token with cross-repo permissions
+            const hasCrossRepoToken = '${{ secrets.CROSS_REPO_TOKEN }}' !== '';
+
+            if (!hasCrossRepoToken) {
+              console.log('⚠️ WARNING: CROSS_REPO_TOKEN not configured. Using GITHUB_TOKEN (limited permissions).');
+              console.log('To enable cross-repo testing:');
+              console.log('1. Create a Personal Access Token with repo scope');
+              console.log('2. Add it as CROSS_REPO_TOKEN secret in repository settings');
+            }
+
+            // Load configuration
+            const configFile = fs.readFileSync('.github/dependent-repos.yml', 'utf8');
+            const config = yaml.load(configFile);
+
+            console.log('Loaded configuration:', JSON.stringify(config, null, 2));
+
+            for (const repo of config.dependent_repos) {
+              const [owner, repoName] = repo.repository.split('/');
+
+              console.log(`Dispatching to ${owner}/${repoName}...`);
+
+              try {
+                await github.rest.repos.createDispatchEvent({
+                  owner,
+                  repo: repoName,
+                  event_type: 'external-integration-test',
+                  client_payload: {
+                    source_repo: context.repo.owner + '/' + context.repo.repo,
+                    pr_number: context.issue.number,
+                    pr_title: context.payload.pull_request.title,
+                    pr_url: context.payload.pull_request.html_url,
+                    commit_sha: context.payload.pull_request.head.sha,
+                    branch: context.payload.pull_request.head.ref
+                  }
+                });
+                console.log(`✅ Successfully dispatched to ${repo.repository}`);
+              } catch (error) {
+                console.error(`❌ Failed to dispatch to ${repo.repository}:`, error.message);
+                if (error.status === 404) {
+                  console.error('   Repository not found or no access.');
+                  console.error('   Add CROSS_REPO_TOKEN secret with repo scope to enable cross-repo testing.');
+                }
+              }
+            }
+
+      - name: Post cross-repo notification comment
+        if: steps.api-changes.outputs.has_changes == 'true'
+        uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            try {
-              await github.rest.repos.createCommitStatus({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                sha: context.payload.pull_request.head.sha,
-                state: 'failure',
-                context: 'Hyperspace Bot / Code Analysis',
-                description: 'Changes required - see PR comments',
-                target_url: 'https://github.com/' + context.repo.owner + '/' + context.repo.repo + '/pull/' + context.issue.number
-              });
-            } catch (error) {
-              console.log('Could not set commit status (permissions):', error.message);
+            const hasCrossRepoToken = '${{ secrets.CROSS_REPO_TOKEN }}' !== '';
+
+            let comment = '## 🔗 Cross-Repository Integration Tests\n\n';
+            comment += 'API changes detected in this PR. Integration tests will be triggered in dependent repositories.\n\n';
+
+            if (!hasCrossRepoToken) {
+              comment += '### ⚠️ Configuration Required\n\n';
+              comment += '- Dispatch attempted ⚠️ (requires CROSS_REPO_TOKEN)\n\n';
+              comment += 'To enable automatic cross-repository testing:\n\n';
+              comment += '1. Create a Personal Access Token (classic) with `repo` scope\n';
+              comment += '2. Add to repository secrets:\n';
+              comment += '   - Name: `CROSS_REPO_TOKEN`\n';
+              comment += '   - Value: Your PAT\n\n';
+              comment += 'While cross-repo testing is being configured, you can manually trigger integration tests:\n\n';
+              comment += '```bash\n';
+              comment += 'cd OrderService\n';
+              comment += 'npm test\n';
+              comment += '```\n';
+            } else {
+              comment += '- Dispatch sent ✅\n';
+              comment += '- Waiting for results from dependent repositories...\n\n';
+              comment += 'Results will be posted back to this PR when tests complete.\n';
             }
+
+            comment += '\n---\n';
+            comment += '*Automated cross-repository testing • [View configuration](.github/dependent-repos.yml)*\n';
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
