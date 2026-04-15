@@ -3,6 +3,7 @@ const cds = require('@sap/cds');
 /**
  * Product Service Implementation
  * Business logic for product management
+ * Version: 1.0.1
  */
 module.exports = cds.service.impl(async function () {
   const { Products, Orders, OrderItems } = this.entities;
