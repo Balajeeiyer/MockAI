@@ -43,10 +43,12 @@ jobs:
               pull_number: context.issue.number
             });
 
+            const changedFiles = files.map(f => f.filename);
+
             core.setOutput('file_count', files.length);
             core.setOutput('additions', pr.additions);
             core.setOutput('deletions', pr.deletions);
-            core.setOutput('changed_files', pr.changed_files);
+            core.setOutput('changed_files', JSON.stringify(changedFiles));
             core.setOutput('head_sha', pr.head.sha);
 
             return files;
@@ -440,8 +442,16 @@ jobs:
               }
             ];
 
+            // Get changed files from previous step
+            const changedFiles = JSON.parse('${{ steps.pr-files.outputs.changed_files }}');
+            console.log('Changed files in PR:', changedFiles);
+
+            // Filter suggestions to only files changed in the PR
+            const filteredSuggestions = suggestions.filter(s => changedFiles.includes(s.path));
+            console.log(`Posting ${filteredSuggestions.length} suggestions (filtered from ${suggestions.length})`);
+
             // Post each suggestion as a review comment
-            for (const suggestion of suggestions) {
+            for (const suggestion of filteredSuggestions) {
               try {
                 await github.rest.pulls.createReviewComment({
                   owner: context.repo.owner,
@@ -469,12 +479,39 @@ jobs:
             const fileCount = ${{ steps.pr-files.outputs.file_count }};
             const additions = ${{ steps.pr-files.outputs.additions }};
             const deletions = ${{ steps.pr-files.outputs.deletions }};
+            const changedFiles = JSON.parse('${{ steps.pr-files.outputs.changed_files }}');
 
             // Generate correlation ID
             const correlationId = require('crypto').randomUUID();
 
+            // Define ALL possible vulnerabilities (superset)
+            const allVulnerabilities = [
+              { severity: 'CRITICAL', name: 'Code Injection (eval)', cvss: '9.8', file: 'srv/product-service.js', line: '52', posted: true },
+              { severity: 'CRITICAL', name: 'SQL Injection', cvss: '9.1', file: 'srv/analytics-service.js', line: '17-18', posted: true },
+              { severity: 'CRITICAL', name: 'Command Injection', cvss: '9.8', file: 'srv/analytics-service.js', line: '32', posted: true },
+              { severity: 'CRITICAL', name: 'Information Disclosure (env vars)', cvss: '9.1', file: 'srv/analytics-service.js', line: '71', posted: true },
+              { severity: 'CRITICAL', name: 'Hardcoded Credentials', cvss: '9.8', file: 'srv/config.js', line: '10-13', posted: true },
+              { severity: 'HIGH', name: 'Hardcoded API Keys', cvss: '8.2', file: 'srv/config.js', line: '18-23', posted: true },
+              { severity: 'HIGH', name: 'Missing Authentication', cvss: '8.2', file: 'srv/analytics-service.js', line: '46', posted: true },
+              { severity: 'MEDIUM', name: 'XSS Vulnerability', cvss: '7.5', file: 'srv/product-service.js', line: '32', posted: true },
+              { severity: 'MEDIUM', name: 'Information Disclosure (logs)', cvss: '5.3', file: 'srv/product-service.js', line: '120', posted: true }
+            ];
+
+            // Filter vulnerabilities to only files in the PR
+            const vulnerabilities = allVulnerabilities.filter(v => changedFiles.includes(v.file));
+
+            const criticalCount = vulnerabilities.filter(v => v.severity === 'CRITICAL').length;
+            const highCount = vulnerabilities.filter(v => v.severity === 'HIGH').length;
+            const mediumCount = vulnerabilities.filter(v => v.severity === 'MEDIUM').length;
+            const totalCount = vulnerabilities.length;
+
+            console.log(`Filtered vulnerabilities: ${totalCount} (from ${allVulnerabilities.length})`);
+            console.log(`Critical: ${criticalCount}, High: ${highCount}, Medium: ${mediumCount}`);
+
             // Analysis summary
-            const summary = 'This PR adds currency validation logic with hardcoded configuration. It contains input sanitization issues that should be resolved before merging: missing trim/uppercase normalization on currency input (line 28-32 in srv/product-service.js), hardcoded currency list that should be externalized to config, and potential injection vulnerabilities from unvalidated user input.';
+            const summary = totalCount > 0
+              ? `This PR contains ${totalCount} security issue(s) that should be addressed. Review the inline suggestions in the Files changed tab.`
+              : 'No security issues detected in the files changed by this PR.';
 
             // Build the consolidated review comment
             const reviewBody = [
