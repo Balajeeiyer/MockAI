@@ -74,9 +74,10 @@ jobs:
               // Check if rating feature was added
               const productServiceFile = files.find(f => f.filename === 'srv/product-service.js');
               if (productServiceFile && productServiceFile.patch.includes('updateRating')) {
+                // Line 185 in the final file (after the product SELECT)
                 suggestions.push({
                   path: 'srv/product-service.js',
-                  line: 140,
+                  line: 185,
                   side: 'RIGHT',
                   body: [
                     '**Performance**: Consider adding input validation before database query',
@@ -107,9 +108,10 @@ jobs:
                   ].join('\n')
                 });
 
+                // Line 192 in the final file (weighted average calculation)
                 suggestions.push({
                   path: 'srv/product-service.js',
-                  line: 147,
+                  line: 192,
                   side: 'RIGHT',
                   body: [
                     '**Best Practice**: Add JSDoc documentation for calculation logic',
