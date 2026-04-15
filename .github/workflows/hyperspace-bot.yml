@@ -79,7 +79,7 @@ jobs:
               status: 'completed',
               conclusion: whitesourceResults.high_severity > 0 ? 'failure' : 'success',
               output: {
-                title: whitesourceResults.high_severity > 0 ? '⚠️ Security vulnerabilities detected' : '✅ No security issues',
+                title: whitesourceResults.high_severity > 0 ? 'Security vulnerabilities detected' : 'No security issues',
                 summary: `**Vulnerabilities Found:** ${whitesourceResults.vulnerabilities}\n` +
                          `**High Severity:** ${whitesourceResults.high_severity}\n` +
                          `**Medium Severity:** ${whitesourceResults.medium_severity}\n` +
@@ -143,10 +143,10 @@ jobs:
                   path: finding.file,
                   line: finding.line,
                   side: 'RIGHT',
-                  body: `**🔴 Checkmarx SAST - ${finding.severity}**\n\n` +
-                        `**Type:** ${finding.type}\n` +
-                        `**Description:** ${finding.description}\n\n` +
-                        `_This issue must be fixed before merging._`
+                  body: '**Checkmarx SAST - ' + finding.severity + '**\n\n' +
+                        '**Type:** ' + finding.type + '\n' +
+                        '**Description:** ' + finding.description + '\n\n' +
+                        '_This issue must be fixed before merging._'
                 });
               } catch (error) {
                 console.log(`Could not post comment: ${error.message}`);
@@ -162,16 +162,16 @@ jobs:
               status: 'completed',
               conclusion: checkmarxResults.high > 0 ? 'failure' : 'success',
               output: {
-                title: checkmarxResults.high > 0 ? '⚠️ Security issues detected' : '✅ No critical issues',
-                summary: `**Total Findings:** ${checkmarxResults.total}\n\n` +
-                         `- 🔴 High: ${checkmarxResults.high}\n` +
-                         `- 🟡 Medium: ${checkmarxResults.medium}\n` +
-                         `- 🔵 Low: ${checkmarxResults.low}\n` +
-                         `- ℹ️ Info: ${checkmarxResults.info}\n\n` +
-                         `**High Severity Findings:**\n` +
+                title: checkmarxResults.high > 0 ? 'Security issues detected' : 'No critical issues',
+                summary: '**Total Findings:** ' + checkmarxResults.total + '\n\n' +
+                         '- High: ' + checkmarxResults.high + '\n' +
+                         '- Medium: ' + checkmarxResults.medium + '\n' +
+                         '- Low: ' + checkmarxResults.low + '\n' +
+                         '- Info: ' + checkmarxResults.info + '\n\n' +
+                         '**High Severity Findings:**\n' +
                          checkmarxResults.findings
                            .filter(f => f.severity === 'HIGH')
-                           .map(f => `- ${f.type} in ${f.file}:${f.line}`)
+                           .map(f => '- ' + f.type + ' in ' + f.file + ':' + f.line)
                            .join('\n')
               }
             });
@@ -203,29 +203,25 @@ jobs:
             console.log(JSON.stringify(sonarResults, null, 2));
 
             // Create PR comment with SonarQube results
-            const sonarComment = `## 📊 SonarQube Analysis Results
-
-**Quality Gate:** ${sonarResults.quality_gate === 'PASSED' ? '✅ PASSED' : '❌ FAILED'}
-
-### Issues
-| Category | Count |
-|----------|-------|
-| 🐛 Bugs | ${sonarResults.bugs} |
-| 🔐 Vulnerabilities | ${sonarResults.vulnerabilities} |
-| 💡 Code Smells | ${sonarResults.code_smells} |
-| 🔥 Security Hotspots | ${sonarResults.security_hotspots} |
-
-### Ratings
-- **Maintainability:** ${sonarResults.maintainability_rating}
-- **Reliability:** ${sonarResults.reliability_rating}
-- **Security:** ${sonarResults.security_rating}
-
-### Metrics
-- **Code Coverage:** ${sonarResults.coverage}%
-- **Duplications:** ${sonarResults.duplications}%
-
----
-_Analysis powered by SonarQube_`;
+            const passed = sonarResults.quality_gate === 'PASSED';
+            const sonarComment = '## SonarQube Analysis Results\n\n' +
+              '**Quality Gate:** ' + (passed ? 'PASSED' : 'FAILED') + '\n\n' +
+              '### Issues\n' +
+              '| Category | Count |\n' +
+              '|----------|-------|\n' +
+              '| Bugs | ' + sonarResults.bugs + ' |\n' +
+              '| Vulnerabilities | ' + sonarResults.vulnerabilities + ' |\n' +
+              '| Code Smells | ' + sonarResults.code_smells + ' |\n' +
+              '| Security Hotspots | ' + sonarResults.security_hotspots + ' |\n\n' +
+              '### Ratings\n' +
+              '- **Maintainability:** ' + sonarResults.maintainability_rating + '\n' +
+              '- **Reliability:** ' + sonarResults.reliability_rating + '\n' +
+              '- **Security:** ' + sonarResults.security_rating + '\n\n' +
+              '### Metrics\n' +
+              '- **Code Coverage:** ' + sonarResults.coverage + '%\n' +
+              '- **Duplications:** ' + sonarResults.duplications + '%\n\n' +
+              '---\n' +
+              '_Analysis powered by SonarQube_';
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -243,12 +239,12 @@ _Analysis powered by SonarQube_`;
               status: 'completed',
               conclusion: sonarResults.quality_gate === 'PASSED' ? 'success' : 'failure',
               output: {
-                title: sonarResults.quality_gate === 'PASSED' ? '✅ Quality Gate Passed' : '❌ Quality Gate Failed',
-                summary: `**Bugs:** ${sonarResults.bugs} | ` +
-                         `**Vulnerabilities:** ${sonarResults.vulnerabilities} | ` +
-                         `**Code Smells:** ${sonarResults.code_smells}\n\n` +
-                         `**Coverage:** ${sonarResults.coverage}% | ` +
-                         `**Security Rating:** ${sonarResults.security_rating}`
+                title: sonarResults.quality_gate === 'PASSED' ? 'Quality Gate Passed' : 'Quality Gate Failed',
+                summary: '**Bugs:** ' + sonarResults.bugs + ' | ' +
+                         '**Vulnerabilities:** ' + sonarResults.vulnerabilities + ' | ' +
+                         '**Code Smells:** ' + sonarResults.code_smells + '\n\n' +
+                         '**Coverage:** ' + sonarResults.coverage + '% | ' +
+                         '**Security Rating:** ' + sonarResults.security_rating
               }
             });
 
@@ -263,22 +259,18 @@ _Analysis powered by SonarQube_`;
             const additions = ${{ steps.pr-files.outputs.additions }};
             const deletions = ${{ steps.pr-files.outputs.deletions }};
 
-            const summary = `## 🚀 Hyperspace Bot - Security Analysis Complete
-
-**PR Analysis:**
-- **Files Changed:** ${fileCount}
-- **Lines:** +${additions} / -${deletions}
-
-**Security Scans Completed:**
-✅ WhiteSource - Dependency vulnerabilities
-✅ Checkmarx SAST - Static code analysis
-✅ SonarQube - Code quality & security
-
-**Action Required:**
-Please review the security findings above and address any critical issues before merging.
-
----
-_Automated security analysis by Hyperspace Bot_`;
+            const summary = '## Hyperspace Bot - Security Analysis Complete\n\n' +
+              '**PR Analysis:**\n' +
+              '- **Files Changed:** ' + fileCount + '\n' +
+              '- **Lines:** +' + additions + ' / -' + deletions + '\n\n' +
+              '**Security Scans Completed:**\n' +
+              '- WhiteSource - Dependency vulnerabilities\n' +
+              '- Checkmarx SAST - Static code analysis\n' +
+              '- SonarQube - Code quality & security\n\n' +
+              '**Action Required:**\n' +
+              'Please review the security findings above and address any critical issues before merging.\n\n' +
+              '---\n' +
+              '_Automated security analysis by Hyperspace Bot_';
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -383,7 +375,7 @@ EOF
             const repos = JSON.parse('${{ steps.read-config.outputs.repos }}');
             const repoList = repos.map(r => '- [' + r.name + '](https://github.com/' + r.repository + ') - Estimated: ' + r.estimated_duration + 's').join('\n');
 
-            const comment = '## 🔄 Cross-Repository Integration Tests Triggered\n\n' +
+            const comment = '## Cross-Repository Integration Tests Triggered\n\n' +
               'API changes detected in this PR. Integration tests dispatched to **' + repos.length + '** dependent repository(ies).\n\n' +
               '### Dependent Repositories:\n' + repoList + '\n\n' +
               '**Note:** Test results will be reported back to this PR via GitHub Checks API.\n\n' +
