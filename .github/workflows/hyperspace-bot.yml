@@ -50,6 +50,120 @@ jobs:
 
             return files;
 
+      - name: SAP CAP Code Analysis and Summary
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.issue.number;
+            const headSha = '${{ steps.pr-files.outputs.head_sha }}';
+
+            // Get PR files with diff
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+
+            // Analyze SAP-specific file types
+            const cdsFiles = files.filter(f => f.filename.endsWith('.cds'));
+            const serviceFiles = files.filter(f => f.filename.includes('srv/') && f.filename.endsWith('.js'));
+            const dbFiles = files.filter(f => f.filename.includes('db/'));
+            const uiFiles = files.filter(f => f.filename.includes('app/') || f.filename.includes('webapp/'));
+
+            // Build SAP-specific summary
+            let sapSummary = '## SAP CAP Code Analysis\n\n';
+            sapSummary += '**You are an expert SAP developer assistant familiar with CAP (CDS, Node.js runtime), SAPUI5/Fiori, and OData.**\n\n';
+
+            // CDS Model Changes
+            if (cdsFiles.length > 0) {
+              sapSummary += '### Data Model Changes (.cds files)\n\n';
+              cdsFiles.forEach(file => {
+                sapSummary += '**' + file.filename + '**\n';
+                if (file.filename.includes('db/')) {
+                  sapSummary += '- CDS entity definitions (data model)\n';
+                  sapSummary += '- Persistence layer changes\n';
+                } else if (file.filename.includes('srv/')) {
+                  sapSummary += '- Service definitions (OData exposure)\n';
+                  sapSummary += '- Projections and service entities\n';
+                  sapSummary += '- Custom actions/functions definitions\n';
+                }
+                sapSummary += '- Changes: +' + file.additions + ' / -' + file.deletions + ' lines\n\n';
+              });
+              sapSummary += '_Note: .cds files define your data model and service API. Changes here affect OData $metadata and database schema._\n\n';
+            }
+
+            // Service Implementation Changes
+            if (serviceFiles.length > 0) {
+              sapSummary += '### Service Implementation (Node.js handlers)\n\n';
+              serviceFiles.forEach(file => {
+                sapSummary += '**' + file.filename + '**\n';
+                sapSummary += '- Business logic and event handlers\n';
+                sapSummary += '- Before/After hooks for CRUD operations\n';
+                sapSummary += '- Custom action/function implementations\n';
+                sapSummary += '- Changes: +' + file.additions + ' / -' + file.deletions + ' lines\n\n';
+              });
+              sapSummary += '_Note: Service implementation files contain CAP event handlers (this.before, this.after, this.on) that add business logic to your OData services._\n\n';
+            }
+
+            // Database Changes
+            if (dbFiles.length > 0 && dbFiles.some(f => !f.filename.endsWith('.cds'))) {
+              sapSummary += '### Database Artifacts\n\n';
+              dbFiles.filter(f => !f.filename.endsWith('.cds')).forEach(file => {
+                sapSummary += '**' + file.filename + '**\n';
+                sapSummary += '- Initial data or configuration\n';
+                sapSummary += '- Changes: +' + file.additions + ' / -' + file.deletions + ' lines\n\n';
+              });
+            }
+
+            // UI Changes
+            if (uiFiles.length > 0) {
+              sapSummary += '### UI Layer (SAPUI5/Fiori)\n\n';
+              uiFiles.forEach(file => {
+                sapSummary += '**' + file.filename + '**\n';
+                if (file.filename.includes('manifest.json')) {
+                  sapSummary += '- App descriptor (OData model configuration)\n';
+                } else if (file.filename.includes('view/')) {
+                  sapSummary += '- XML view definitions\n';
+                } else if (file.filename.includes('controller/')) {
+                  sapSummary += '- Controller logic\n';
+                }
+                sapSummary += '- Changes: +' + file.additions + ' / -' + file.deletions + ' lines\n\n';
+              });
+              sapSummary += '_Note: UI changes affect the Fiori application layer that consumes your OData services._\n\n';
+            }
+
+            // Functional Impact Assessment
+            sapSummary += '### Functional Impact\n\n';
+            if (cdsFiles.length > 0) {
+              sapSummary += '- **OData API**: Metadata changes may affect client applications\n';
+              sapSummary += '- **Database**: Schema migration may be required\n';
+            }
+            if (serviceFiles.length > 0) {
+              sapSummary += '- **Business Logic**: Handler changes affect service behavior\n';
+            }
+            sapSummary += '\n';
+
+            // SAP Conventions Reminder
+            sapSummary += '### SAP CAP Conventions\n\n';
+            sapSummary += '- **.cds files**: Data model and service definitions (declarative)\n';
+            sapSummary += '- **srv/*.js files**: Service implementation with event handlers\n';
+            sapSummary += '- **this.before/after/on**: CAP event handler registration\n';
+            sapSummary += '- **OData V4**: RESTful API following OData specification\n';
+            sapSummary += '- **Annotations**: @mandatory, @readonly, @assert.* for validation\n';
+            sapSummary += '- **Aspects**: managed, cuid, temporal for common patterns\n';
+            sapSummary += '\n---\n';
+            sapSummary += '_Automated SAP CAP analysis by Hyperspace Bot_';
+
+            // Post SAP analysis comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: sapSummary
+            });
+
       - name: WhiteSource Scan
         continue-on-error: true
         uses: actions/github-script@v7
