@@ -11,7 +11,10 @@ service ProductService @(path: '/products') {
    * Allows full CRUD operations on products
    */
   @odata.draft.enabled
-  entity Products as projection on db.Products actions {
+  entity Products as projection on db.Products {
+    *,
+    virtual available : Boolean  // Computed field: isActive && stock > 0
+  } actions {
     /**
      * Update stock level
      */

@@ -94,6 +94,9 @@ module.exports = cds.service.impl(async function () {
                             product.stock < config.stockThresholds.lowStock ? 'LOW_STOCK' :
                             'IN_STOCK';
 
+        // Add availability status (considers both active status and stock)
+        product.available = product.isActive && product.stock > 0;
+
         // Add price formatting
         product.formattedPrice = `${product.currency} ${product.price.toFixed(2)}`;
       }
@@ -298,9 +301,14 @@ module.exports = cds.service.impl(async function () {
 
     let query = SELECT.from(Products);
 
-    // Apply search term filter
+    // Apply search term filter using safe parameterized query
     if (searchTerm) {
-      query = query.where(`name like '%${searchTerm}%' or description like '%${searchTerm}%'`);
+      const sanitizedTerm = `%${searchTerm}%`;
+      query = query.where(
+        { name: { like: sanitizedTerm } },
+        'or',
+        { description: { like: sanitizedTerm } }
+      );
     }
 
     // Apply price range filters
