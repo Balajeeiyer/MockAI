@@ -12,6 +12,8 @@ entity Products : cuid, managed {
       price       : Decimal(10, 2) @mandatory;
       currency    : String(3) default 'USD';
       stock       : Integer default 0;
+      rating      : Decimal(3, 2) default 0.00;  // Product rating (0.00 - 5.00)
+      reviewCount : Integer default 0;           // Number of reviews
       category    : Association to Categories;
       supplier    : Association to Suppliers;
       isActive    : Boolean default true;
