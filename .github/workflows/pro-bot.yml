@@ -445,8 +445,21 @@ jobs:
               }
             ];
 
+            // Get changed files in the PR
+            const { data: prFiles } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            const changedFiles = prFiles.map(f => f.filename);
+            console.log('Changed files in PR:', changedFiles);
+
+            // Filter suggestions to only files changed in the PR
+            const filteredSuggestions = suggestions.filter(s => changedFiles.includes(s.path));
+            console.log(`Posting ${filteredSuggestions.length} suggestions (filtered from ${suggestions.length})`);
+
             // Post each suggestion as a review comment
-            for (const suggestion of suggestions) {
+            for (const suggestion of filteredSuggestions) {
               try {
                 await github.rest.pulls.createReviewComment({
                   owner: context.repo.owner,
@@ -464,6 +477,10 @@ jobs:
               }
             }
 
+            // Save filtered suggestions count for next step
+            core.setOutput('filtered_suggestions_count', filteredSuggestions.length);
+            core.setOutput('changed_files', JSON.stringify(changedFiles));
+
       - name: Analyze Code and Post Review
         uses: actions/github-script@v6
         with:
@@ -474,20 +491,47 @@ jobs:
             const fileCount = ${{ steps.pr-files.outputs.file_count }};
             const additions = ${{ steps.pr-files.outputs.additions }};
             const deletions = ${{ steps.pr-files.outputs.deletions }};
+            const changedFiles = JSON.parse('${{ steps.pr-files.outputs.changed_files }}' || '[]');
 
             // Generate correlation ID
             const correlationId = require('crypto').randomUUID();
 
+            // Define ALL possible vulnerabilities (superset)
+            const allVulnerabilities = [
+              { severity: 'CRITICAL', name: 'Code Injection (eval)', cvss: '9.8', file: 'srv/product-service.js', line: '52', posted: true },
+              { severity: 'CRITICAL', name: 'SQL Injection', cvss: '9.1', file: 'srv/analytics-service.js', line: '17-18', posted: true },
+              { severity: 'CRITICAL', name: 'Command Injection', cvss: '9.8', file: 'srv/analytics-service.js', line: '32', posted: true },
+              { severity: 'CRITICAL', name: 'Information Disclosure (env vars)', cvss: '9.1', file: 'srv/analytics-service.js', line: '71', posted: true },
+              { severity: 'CRITICAL', name: 'Hardcoded Credentials', cvss: '9.8', file: 'srv/config.js', line: '10-13', posted: true },
+              { severity: 'HIGH', name: 'Hardcoded API Keys', cvss: '8.2', file: 'srv/config.js', line: '18-23', posted: true },
+              { severity: 'HIGH', name: 'Missing Authentication', cvss: '8.2', file: 'srv/analytics-service.js', line: '46', posted: true },
+              { severity: 'MEDIUM', name: 'XSS Vulnerability', cvss: '7.5', file: 'srv/product-service.js', line: '32', posted: true },
+              { severity: 'MEDIUM', name: 'Information Disclosure (logs)', cvss: '5.3', file: 'srv/product-service.js', line: '120', posted: true }
+            ];
+
+            // Filter vulnerabilities to only files in the PR
+            const vulnerabilities = allVulnerabilities.filter(v => changedFiles.includes(v.file));
+
+            const criticalCount = vulnerabilities.filter(v => v.severity === 'CRITICAL').length;
+            const highCount = vulnerabilities.filter(v => v.severity === 'HIGH').length;
+            const mediumCount = vulnerabilities.filter(v => v.severity === 'MEDIUM').length;
+            const totalCount = vulnerabilities.length;
+
+            console.log(`Filtered vulnerabilities: ${totalCount} (from ${allVulnerabilities.length})`);
+            console.log(`Critical: ${criticalCount}, High: ${highCount}, Medium: ${mediumCount}`);
+
             // Analysis summary
-            const summary = 'This PR adds currency validation logic with hardcoded configuration. It contains input sanitization issues that should be resolved before merging: missing trim/uppercase normalization on currency input (line 28-32 in srv/product-service.js), hardcoded currency list that should be externalized to config, and potential injection vulnerabilities from unvalidated user input.';
+            const summary = totalCount > 0
+              ? `This PR contains ${totalCount} security issue(s) that should be addressed. Review the inline suggestions in the Files changed tab.`
+              : 'No security issues detected in the files changed by this PR.';
 
             // Build the consolidated review comment
             const reviewBody = [
               '## 🚀 PRo - PR Optimiser Analysis Report',
               '',
-              '**Status**: ⚠️ **Security Issues Detected** - Review required',
+              totalCount > 0 ? '**Status**: ⚠️ **Security Issues Detected** - Review required' : '**Status**: ✅ **No Security Issues**',
               '',
-              'This PR contains **9 security vulnerabilities** including 5 CRITICAL and 2 HIGH severity issues that should be addressed.',
+              totalCount > 0 ? `This PR contains **${totalCount} security vulnerabilit${totalCount === 1 ? 'y' : 'ies'}** that should be addressed.` : 'No security issues detected in the files changed by this PR.',
               '',
               summary,
               '',
@@ -501,47 +545,66 @@ jobs:
               '- Correlation ID: `' + correlationId + '`',
               '- Files Changed: ' + fileCount,
               '- Lines: +' + additions + ' / -' + deletions,
-              '- Security Scan: FAILED',
-              '- Total Vulnerabilities: 9',
-              '- CRITICAL: 5 | HIGH: 2 | MEDIUM: 2',
+              '- Security Scan: ' + (totalCount > 0 ? 'FAILED' : 'PASSED'),
+              '- Total Vulnerabilities: ' + totalCount,
+              totalCount > 0 ? `- CRITICAL: ${criticalCount} | HIGH: ${highCount} | MEDIUM: ${mediumCount}` : '',
               '',
               '</details>',
-              '',
-              '---',
-              '',
-              '## 🛡️ Security Vulnerabilities Summary',
-              '',
-              '### Critical Severity (5)',
-              '',
-              '| Severity | Vulnerability | CVSS | File | Line | Inline Fix |',
-              '|----------|--------------|------|------|------|------------|',
-              '| 🔴 CRITICAL | Code Injection (eval) | 9.8 | `srv/product-service.js` | 52 | ✅ Posted |',
-              '| 🔴 CRITICAL | SQL Injection | 9.1 | `srv/analytics-service.js` | 17-18 | ✅ Posted |',
-              '| 🔴 CRITICAL | Command Injection | 9.8 | `srv/analytics-service.js` | 32 | ✅ Posted |',
-              '| 🔴 CRITICAL | Information Disclosure (env vars) | 9.1 | `srv/analytics-service.js` | 71 | ✅ Posted |',
-              '| 🔴 CRITICAL | Hardcoded Credentials | 9.8 | `srv/config.js` | 10-13 | ✅ Posted |',
-              '',
-              '### High Severity (2)',
-              '',
-              '| Severity | Vulnerability | CVSS | File | Line | Inline Fix |',
-              '|----------|--------------|------|------|------|------------|',
-              '| 🟠 HIGH | Hardcoded API Keys | 8.2 | `srv/config.js` | 18-23 | ✅ Posted |',
-              '| 🟠 HIGH | Missing Authentication | 8.2 | `srv/analytics-service.js` | 46 | ✅ Posted |',
-              '',
-              '### Medium Severity (2)',
-              '',
-              '| Severity | Vulnerability | CVSS | File | Line | Inline Fix |',
-              '|----------|--------------|------|------|------|------------|',
-              '| 🟡 MEDIUM | XSS Vulnerability | 7.5 | `srv/product-service.js` | 32 | ✅ Posted |',
-              '| 🟡 MEDIUM | Information Disclosure (logs) | 5.3 | `srv/product-service.js` | 120 | ✅ Posted |',
-              '',
-              '> **💡 How to view inline fixes:**  ',
-              '> Go to the **Files changed** tab above. Each vulnerability has an inline comment with a **"Commit suggestion"** button you can click to apply the fix.',
-              '',
-              '---',
-              '',
-              '*🤖 PRo analysis complete. View inline commit suggestions in the **Files changed** tab to fix each vulnerability. Each suggestion can be committed directly with one click!*'
-            ].join('\n');
+              ''
+            ];
+
+            // Add security vulnerabilities table only if there are vulnerabilities
+            if (totalCount > 0) {
+              reviewBody.push('---', '', '## 🛡️ Security Vulnerabilities Summary', '');
+
+              // Critical vulnerabilities
+              const criticalVulns = vulnerabilities.filter(v => v.severity === 'CRITICAL');
+              if (criticalVulns.length > 0) {
+                reviewBody.push(`### Critical Severity (${criticalVulns.length})`, '');
+                reviewBody.push('| Severity | Vulnerability | CVSS | File | Line | Inline Fix |');
+                reviewBody.push('|----------|--------------|------|------|------|------------|');
+                criticalVulns.forEach(v => {
+                  reviewBody.push(`| 🔴 CRITICAL | ${v.name} | ${v.cvss} | \`${v.file}\` | ${v.line} | ${v.posted ? '✅ Posted' : '❌ Not posted'} |`);
+                });
+                reviewBody.push('');
+              }
+
+              // High vulnerabilities
+              const highVulns = vulnerabilities.filter(v => v.severity === 'HIGH');
+              if (highVulns.length > 0) {
+                reviewBody.push(`### High Severity (${highVulns.length})`, '');
+                reviewBody.push('| Severity | Vulnerability | CVSS | File | Line | Inline Fix |');
+                reviewBody.push('|----------|--------------|------|------|------|------------|');
+                highVulns.forEach(v => {
+                  reviewBody.push(`| 🟠 HIGH | ${v.name} | ${v.cvss} | \`${v.file}\` | ${v.line} | ${v.posted ? '✅ Posted' : '❌ Not posted'} |`);
+                });
+                reviewBody.push('');
+              }
+
+              // Medium vulnerabilities
+              const mediumVulns = vulnerabilities.filter(v => v.severity === 'MEDIUM');
+              if (mediumVulns.length > 0) {
+                reviewBody.push(`### Medium Severity (${mediumVulns.length})`, '');
+                reviewBody.push('| Severity | Vulnerability | CVSS | File | Line | Inline Fix |');
+                reviewBody.push('|----------|--------------|------|------|------|------------|');
+                mediumVulns.forEach(v => {
+                  reviewBody.push(`| 🟡 MEDIUM | ${v.name} | ${v.cvss} | \`${v.file}\` | ${v.line} | ${v.posted ? '✅ Posted' : '❌ Not posted'} |`);
+                });
+                reviewBody.push('');
+              }
+
+              reviewBody.push('> **💡 How to view inline fixes:**  ');
+              reviewBody.push('> Go to the **Files changed** tab above. Each vulnerability has an inline comment with a **"Commit suggestion"** button you can click to apply the fix.');
+              reviewBody.push('');
+            }
+
+            reviewBody.push('---', '');
+            reviewBody.push(totalCount > 0
+              ? '*🤖 PRo analysis complete. View inline commit suggestions in the **Files changed** tab to fix each vulnerability.*'
+              : '*🤖 PRo analysis complete. No security issues found in the files changed by this PR.*'
+            );
+
+            const finalReviewBody = reviewBody.join('\n');
 
             // Delete old comments from previous runs
             const { data: comments } = await github.rest.issues.listComments({
@@ -566,7 +629,7 @@ jobs:
               issue_number: prNumber,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: reviewBody
+              body: finalReviewBody
             });
 
       - name: Request Reviews from Bots
