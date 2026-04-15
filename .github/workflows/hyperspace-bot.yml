@@ -852,3 +852,135 @@ jobs:
             } catch (error) {
               console.log('Could not set commit status (permissions):', error.message);
             }
+
+  cross-repo-dispatcher:
+    name: Cross-Repository Integration Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for API changes
+        id: api-changes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+
+            // Check if any API-related files changed
+            const apiFiles = [
+              'srv/product-service.cds',
+              'srv/product-service.js',
+              'db/schema.cds'
+            ];
+
+            const hasApiChanges = files.some(file =>
+              apiFiles.some(apiFile => file.filename.includes(apiFile))
+            );
+
+            core.setOutput('has_api_changes', hasApiChanges);
+            return hasApiChanges;
+
+      - name: Read dependent repos configuration
+        if: steps.api-changes.outputs.has_api_changes == 'true'
+        id: read-config
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const yaml = require('js-yaml');
+
+            // Read dependent-repos.yml
+            const configContent = fs.readFileSync('.github/dependent-repos.yml', 'utf8');
+            const config = yaml.load(configContent);
+
+            return config.dependent_repos || [];
+
+      - name: Dispatch integration tests
+        if: steps.api-changes.outputs.has_api_changes == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const dependentRepos = ${{ steps.read-config.outputs.result }};
+
+            if (!dependentRepos || dependentRepos.length === 0) {
+              console.log('No dependent repositories configured');
+              return;
+            }
+
+            console.log('Dispatching integration tests to ' + dependentRepos.length + ' repositories...');
+
+            for (const repo of dependentRepos) {
+              const [owner, repoName] = repo.repository.split('/');
+
+              console.log('Dispatching to: ' + repo.repository);
+
+              try {
+                await github.rest.repos.createDispatchEvent({
+                  owner: owner,
+                  repo: repoName,
+                  event_type: 'external-integration-test',
+                  client_payload: {
+                    source_repo: context.repo.owner + '/' + context.repo.repo,
+                    source_pr: context.issue.number,
+                    source_branch: context.payload.pull_request.head.ref,
+                    source_sha: context.payload.pull_request.head.sha,
+                    source_pr_url: context.payload.pull_request.html_url,
+                    triggered_by: context.actor
+                  }
+                });
+
+                console.log('Successfully dispatched to ' + repo.repository);
+              } catch (error) {
+                console.error('Failed to dispatch to ' + repo.repository + ':', error.message);
+              }
+            }
+
+      - name: Post cross-repo notification comment
+        if: steps.api-changes.outputs.has_api_changes == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const dependentRepos = ${{ steps.read-config.outputs.result }};
+
+            if (!dependentRepos || dependentRepos.length === 0) {
+              return;
+            }
+
+            let comment = '## Cross-Repository Integration Tests Triggered\n\n';
+            comment += 'API changes detected. Dispatched integration tests to **' + dependentRepos.length + '** dependent repositories:\n\n';
+
+            for (const repo of dependentRepos) {
+              comment += '- **[' + repo.name + '](https://github.com/' + repo.repository + ')** ';
+              if (repo.critical) {
+                comment += '(CRITICAL) ';
+              }
+              comment += '- Est. ' + (repo.estimated_duration / 60) + ' min\n';
+            }
+
+            comment += '\n### What happens next?\n\n';
+            comment += '1. Integration tests will run in each dependent repository\n';
+            comment += '2. Results will appear as **GitHub Checks** on this PR\n';
+            comment += '3. Any failures will be reported with detailed logs\n';
+            comment += '4. All tests must pass before this PR can be merged\n\n';
+            comment += '### Test Coverage\n\n';
+            comment += '- Schema validation (OData $metadata compatibility)\n';
+            comment += '- Integration tests (CRUD operations)\n';
+            comment += '- Performance benchmarks (response time thresholds)\n\n';
+            comment += '---\n';
+            comment += '*Automated cross-repository testing • [View configuration](.github/dependent-repos.yml)*\n';
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: comment
+            });
