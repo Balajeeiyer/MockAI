@@ -297,11 +297,11 @@ jobs:
             if (inlineSuggestionsPosted > 0) {
               summaryBody += `### 📍 Inline Suggestions
 I've added ${inlineSuggestionsPosted} inline code suggestion(s) directly on the affected lines:
-- \`srv/product-service.js:32\` - XSS vulnerability fix
-- \`srv/product-service.js:52\` - Critical eval() code injection fix
+- srv/product-service.js:32 - XSS vulnerability fix
+- srv/product-service.js:52 - Critical eval() code injection fix
 
-**To view**: Go to the **Files changed** tab and look for the 💬 comment icons.
-**To apply**: Click the **"Commit suggestion"** button on any suggestion.
+**To view**: Go to the **Files changed** tab and look for the comment icons.
+**To apply**: Click the **Commit suggestion** button on any suggestion.
 
 `;
             } else {
@@ -309,8 +309,8 @@ I've added ${inlineSuggestionsPosted} inline code suggestion(s) directly on the 
 Security issues detected but inline suggestions can only be posted on files changed in this PR.
 
 **Issues found in**:
-- \`srv/product-service.js:32\` - XSS vulnerability (sanitize description input)
-- \`srv/product-service.js:52\` - Critical code injection via eval()
+- srv/product-service.js:32 - XSS vulnerability (sanitize description input)
+- srv/product-service.js:52 - Critical code injection via eval()
 
 **To fix**: Modify these files in your PR to see inline commit suggestions.
 
