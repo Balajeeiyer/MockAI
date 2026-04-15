@@ -1,0 +1,718 @@
+name: 🚀 PRo - PR Optimiser (Merge Conflicts)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  issues: write
+
+jobs:
+  detect-conflicts:
+    name: PRo Merge Conflict Resolver
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Check PR Mergeable State
+        id: mergeable-check
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+
+            console.log(`PR mergeable state: ${pr.mergeable_state}`);
+            console.log(`PR mergeable: ${pr.mergeable}`);
+
+            core.setOutput('mergeable_state', pr.mergeable_state);
+            core.setOutput('mergeable', pr.mergeable);
+
+            // mergeable_state can be: 'clean', 'dirty', 'unstable', 'blocked', 'behind', 'unknown'
+            // mergeable can be: true, false, null
+            if (pr.mergeable === false || pr.mergeable_state === 'dirty') {
+              console.log('⚠️ PR has merge conflicts (GitHub API)');
+              core.setOutput('has_api_conflicts', 'true');
+            } else {
+              console.log('✅ PR is mergeable (GitHub API)');
+              core.setOutput('has_api_conflicts', 'false');
+            }
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch base branch
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }}
+
+      - name: Check for merge conflicts
+        id: conflict-check
+        continue-on-error: true
+        run: |
+          echo "Checking for merge conflicts..."
+
+          # Attempt merge to detect conflicts
+          git merge --no-commit --no-ff origin/${{ github.event.pull_request.base.ref }} > /tmp/merge-output.txt 2>&1 || true
+
+          # Check if there are conflicts
+          if git diff --name-only --diff-filter=U | grep -q .; then
+            echo "has_conflicts=true" >> $GITHUB_OUTPUT
+            git diff --name-only --diff-filter=U > /tmp/conflict-files.txt
+            echo "✅ Conflicts detected in:"
+            cat /tmp/conflict-files.txt
+          else
+            echo "has_conflicts=false" >> $GITHUB_OUTPUT
+            echo "✅ No merge conflicts detected"
+          fi
+
+          # Abort the merge
+          git merge --abort 2>/dev/null || true
+
+      - name: Analyze and resolve conflicts
+        if: steps.conflict-check.outputs.has_conflicts == 'true' || steps.mergeable-check.outputs.has_api_conflicts == 'true'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const { execSync } = require('child_process');
+
+            const prNumber = context.issue.number;
+            const baseRef = context.payload.pull_request.base.ref;
+            const headRef = context.payload.pull_request.head.ref;
+
+            console.log(`🔍 Analyzing PR #${prNumber}: ${headRef} -> ${baseRef}`);
+
+            // Get PR details
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+
+            console.log(`PR mergeable state: ${pr.mergeable_state}, mergeable: ${pr.mergeable}`);
+
+            const headSha = pr.head.sha;
+
+            // Delete old PRo merge conflict comments
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber
+            });
+
+            for (const comment of comments) {
+              if (comment.body.includes('🔀 PRo Merge Conflict Analysis') ||
+                  comment.body.includes('⚠️ Merge Conflicts Detected')) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: comment.id
+                });
+              }
+            }
+
+            // Read conflict files
+            const conflictFiles = fs.readFileSync('/tmp/conflict-files.txt', 'utf8')
+              .split('\n')
+              .filter(f => f.trim() !== '');
+
+            if (conflictFiles.length === 0) {
+              console.log('No conflicts found');
+              return;
+            }
+
+            // Attempt merge again to get conflict content
+            try {
+              execSync(`git merge --no-commit --no-ff origin/${baseRef}`, { stdio: 'pipe' });
+            } catch (e) {
+              // Expected to fail due to conflicts
+            }
+
+            // Analyze each conflicted file
+            const conflictAnalysis = [];
+            const inlineSuggestions = [];
+
+            for (const filePath of conflictFiles) {
+              try {
+                const conflictContent = fs.readFileSync(filePath, 'utf8');
+                const lines = conflictContent.split('\n');
+
+                // Find conflict markers
+                let inConflict = false;
+                let conflictStart = -1;
+                let conflictMiddle = -1;
+                let conflictEnd = -1;
+                let currentSection = [];
+                let theirSection = [];
+
+                for (let i = 0; i < lines.length; i++) {
+                  const line = lines[i];
+
+                  if (line.startsWith('<<<<<<<')) {
+                    inConflict = true;
+                    conflictStart = i;
+                    currentSection = [];
+                  } else if (line.startsWith('=======') && inConflict) {
+                    conflictMiddle = i;
+                    theirSection = [];
+                  } else if (line.startsWith('>>>>>>>') && inConflict) {
+                    conflictEnd = i;
+                    inConflict = false;
+
+                    // Analyze this conflict section
+                    const strategy = determineResolutionStrategy(
+                      filePath,
+                      currentSection,
+                      theirSection,
+                      conflictStart
+                    );
+
+                    conflictAnalysis.push({
+                      file: filePath,
+                      startLine: conflictStart + 1,
+                      endLine: conflictEnd + 1,
+                      currentBranch: currentSection,
+                      baseBranch: theirSection,
+                      strategy: strategy
+                    });
+
+                    // Create inline suggestion
+                    const suggestion = createInlineSuggestion(
+                      filePath,
+                      conflictStart,
+                      conflictEnd,
+                      currentSection,
+                      theirSection,
+                      strategy,
+                      headSha
+                    );
+
+                    if (suggestion) {
+                      inlineSuggestions.push(suggestion);
+                    }
+                  } else if (inConflict) {
+                    if (conflictMiddle === -1) {
+                      currentSection.push(line);
+                    } else {
+                      theirSection.push(line);
+                    }
+                  }
+                }
+              } catch (error) {
+                console.log(`Error analyzing ${filePath}:`, error.message);
+              }
+            }
+
+            // Post summary comment with inline resolution suggestions
+            let summaryBody = `## 🔀 PRo Merge Conflict Analysis
+
+            ### ⚠️ Conflicts Found
+
+            This PR has **${conflictFiles.length} file(s)** with merge conflicts that need resolution:
+
+            `;
+
+            for (const analysis of conflictAnalysis) {
+              summaryBody += `- **\`${analysis.file}\`** (Line ${analysis.startLine})\n`;
+              summaryBody += `  - Strategy: ${analysis.strategy.name}\n`;
+              summaryBody += `  - ${analysis.strategy.description}\n\n`;
+            }
+
+            // Add detailed inline resolution suggestions section
+            if (conflictAnalysis.length > 0) {
+              summaryBody += `
+            ### 🔧 Inline Resolution Suggestions
+
+            `;
+
+              for (let i = 0; i < conflictAnalysis.length; i++) {
+                const analysis = conflictAnalysis[i];
+                const suggestion = inlineSuggestions[i];
+
+                if (suggestion) {
+                  summaryBody += `
+            <details>
+            <summary><strong>📍 ${analysis.file}:${analysis.startLine}</strong> - ${analysis.strategy.name}</summary>
+
+            ${suggestion.body}
+
+            </details>
+
+            `;
+                }
+              }
+            }
+
+            summaryBody += `
+            ### 🔧 How to Resolve Locally
+
+            If you prefer to resolve conflicts locally:
+
+            \`\`\`bash
+            # Fetch latest changes
+            git fetch origin ${baseRef}
+
+            # Merge base branch into your branch
+            git merge origin/${baseRef}
+
+            # Resolve conflicts in your editor
+            # Then stage and commit
+            git add .
+            git commit -m "fix: resolve merge conflicts with ${baseRef}"
+            git push
+            \`\`\`
+
+            ### 📚 Resources
+
+            - [GitHub: Resolving merge conflicts](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts)
+            - [Git merge conflict resolution](https://git-scm.com/book/en/v2/Git-Branching-Basic-Branching-and-Merging)
+
+            ---
+
+            *🤖 PRo detected merge conflicts • Review inline suggestions in Files changed tab*
+            `;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: summaryBody
+            });
+
+            // Add label
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                labels: ['merge-conflict', 'needs-resolution']
+              });
+            } catch (error) {
+              console.log('Error adding labels:', error.message);
+            }
+
+            // Helper function to determine resolution strategy
+            function determineResolutionStrategy(filePath, currentLines, baseLines, lineNum) {
+              // Analyze the conflict to suggest a strategy
+              const currentCode = currentLines.join('\n').trim();
+              const baseCode = baseLines.join('\n').trim();
+
+              // Check if it's a package-lock.json or similar
+              if (filePath.includes('package-lock.json') ||
+                  filePath.includes('yarn.lock') ||
+                  filePath.includes('pnpm-lock.yaml')) {
+                return {
+                  name: 'Regenerate lock file',
+                  description: 'Delete lock file and regenerate',
+                  resolution: 'regenerate'
+                };
+              }
+
+              // Check if both sides made identical changes
+              if (currentCode === baseCode) {
+                return {
+                  name: 'Accept either (identical)',
+                  description: 'Both branches made the same change',
+                  resolution: 'accept-current'
+                };
+              }
+
+              // Check if one side is empty (deletion)
+              if (currentCode === '' && baseCode !== '') {
+                return {
+                  name: 'Keep base version',
+                  description: 'Your branch deleted this, base branch modified it',
+                  resolution: 'accept-base'
+                };
+              }
+
+              if (baseCode === '' && currentCode !== '') {
+                return {
+                  name: 'Keep your changes',
+                  description: 'Base branch deleted this, you modified it',
+                  resolution: 'accept-current'
+                };
+              }
+
+              // Check if it's srv/config.js - special handling for config conflicts
+              if (filePath === 'srv/config.js') {
+                // Check if feature branch has hardcoded credentials and main has environment config
+                if (currentCode.includes('hardcoded') || currentCode.includes('database:') || currentCode.includes('apiKeys:')) {
+                  if (baseCode.includes('environment:') || baseCode.includes('process.env')) {
+                    return {
+                      name: 'Accept main branch (secure config)',
+                      description: 'Main branch uses environment variables - more secure than hardcoded values',
+                      resolution: 'accept-base'
+                    };
+                  }
+                }
+                // If main has better security, prefer it
+                if (baseCode.includes('process.env') && !currentCode.includes('process.env')) {
+                  return {
+                    name: 'Merge configurations',
+                    description: 'Combine environment config from main with other settings',
+                    resolution: 'merge-config'
+                  };
+                }
+              }
+
+              // Check if it's import/dependency related
+              if (currentCode.includes('import') || currentCode.includes('require') ||
+                  baseCode.includes('import') || baseCode.includes('require')) {
+                return {
+                  name: 'Merge both imports',
+                  description: 'Combine imports from both branches',
+                  resolution: 'merge-both'
+                };
+              }
+
+              // Check if it's version numbers
+              if (filePath.includes('package.json') &&
+                  (currentCode.includes('version') || baseCode.includes('version'))) {
+                return {
+                  name: 'Use newer version',
+                  description: 'Keep the higher version number',
+                  resolution: 'use-newer'
+                };
+              }
+
+              // Default: manual review needed
+              return {
+                name: 'Manual review required',
+                description: 'Both branches modified the same code - needs careful review',
+                resolution: 'manual'
+              };
+            }
+
+            // Helper function to create inline suggestion
+            function createInlineSuggestion(filePath, startLine, endLine, currentLines, baseLines, strategy, commitId) {
+              let resolvedContent = '';
+              let suggestionBody = '';
+
+              if (strategy.resolution === 'accept-current') {
+                resolvedContent = currentLines.join('\n');
+                suggestionBody = [
+                  '**Resolution Strategy**: Keep changes from your branch',
+                  '',
+                  '**Your changes**:',
+                  '```javascript',
+                  currentLines.slice(0, 15).join('\n') + (currentLines.length > 15 ? '\n  // ...' : ''),
+                  '```',
+                  '',
+                  '**Base branch changes**:',
+                  '```javascript',
+                  baseLines.slice(0, 15).join('\n') + (baseLines.length > 15 ? '\n  // ...' : ''),
+                  '```',
+                  '',
+                  '---',
+                  '',
+                  '### 💡 Recommended Resolution',
+                  '',
+                  'Replace the conflicted section with your branch changes:',
+                  '',
+                  '```javascript',
+                  resolvedContent,
+                  '```',
+                  '',
+                  '**Why this resolution?** Your changes appear to be the intended modification.',
+                  '',
+                  '**How to apply**:',
+                  '1. Open the file in your editor',
+                  '2. Keep everything between `<<<<<<< HEAD` and `=======`',
+                  '3. Delete everything between `=======` and `>>>>>>>` including markers',
+                  '4. Commit the resolved file'
+                ].join('\n');
+
+              } else if (strategy.resolution === 'accept-base') {
+                resolvedContent = baseLines.join('\n');
+                suggestionBody = [
+                  '**Resolution Strategy**: Keep changes from base branch',
+                  '',
+                  '**Your changes**:',
+                  '```javascript',
+                  currentLines.slice(0, 15).join('\n') + (currentLines.length > 15 ? '\n  // ...' : ''),
+                  '```',
+                  '',
+                  '**Base branch changes**:',
+                  '```javascript',
+                  baseLines.slice(0, 15).join('\n') + (baseLines.length > 15 ? '\n  // ...' : ''),
+                  '```',
+                  '',
+                  '---',
+                  '',
+                  '### 💡 Recommended Resolution',
+                  '',
+                  'Replace the conflicted section with base branch changes:',
+                  '',
+                  '```javascript',
+                  resolvedContent,
+                  '```',
+                  '',
+                  '**Why this resolution?** Base branch changes should take precedence.',
+                  '',
+                  '**How to apply**:',
+                  '1. Open the file in your editor',
+                  '2. Keep everything between `=======` and `>>>>>>>`',
+                  '3. Delete everything between `<<<<<<< HEAD` and `=======` including markers',
+                  '4. Commit the resolved file'
+                ].join('\n');
+
+              } else if (strategy.resolution === 'merge-both') {
+                // Merge both sections
+                const merged = [...new Set([...currentLines, ...baseLines])];
+                resolvedContent = merged.join('\n');
+                suggestionBody = [
+                  '**Resolution Strategy**: Combine changes from both branches',
+                  '',
+                  '**Your changes**:',
+                  '```javascript',
+                  currentLines.join('\n'),
+                  '```',
+                  '',
+                  '**Base branch changes**:',
+                  '```javascript',
+                  baseLines.join('\n'),
+                  '```',
+                  '',
+                  '---',
+                  '',
+                  '### 💡 Recommended Resolution',
+                  '',
+                  'Merge both sets of changes:',
+                  '',
+                  '```javascript',
+                  resolvedContent,
+                  '```',
+                  '',
+                  '**Why this resolution?** Both sets of changes can coexist.',
+                  '',
+                  '**How to apply**:',
+                  '1. Open the file in your editor',
+                  '2. Replace the entire conflict section with the merged code above',
+                  '3. Remove all conflict markers',
+                  '4. Commit the resolved file'
+                ].join('\n');
+
+              } else if (strategy.resolution === 'merge-config') {
+                // Special handling for config file merges
+                // Prefer main branch's environment config approach
+                resolvedContent = [
+                  '  /**',
+                  '   * Environment configuration',
+                  '   * Load from environment variables for security',
+                  '   */',
+                  '  environment: {',
+                  '    nodeEnv: process.env.NODE_ENV || \'development\',',
+                  '    port: process.env.PORT || 4004,',
+                  '    logLevel: process.env.LOG_LEVEL || \'info\'',
+                  '  },'
+                ].join('\n');
+
+                suggestionBody = [
+                  '**Resolution Strategy**: Use environment-based configuration (main branch)',
+                  '',
+                  '**Your branch** (feature):',
+                  '```javascript',
+                  currentLines.slice(0, 15).join('\n') + (currentLines.length > 15 ? '\n  // ...' : ''),
+                  '```',
+                  '⚠️ *Contains hardcoded credentials - security risk!*',
+                  '',
+                  '**Main branch**:',
+                  '```javascript',
+                  baseLines.join('\n'),
+                  '```',
+                  '✅ *Uses environment variables - secure approach!*',
+                  '',
+                  '---',
+                  '',
+                  '### 💡 Recommended Resolution',
+                  '',
+                  'Replace the conflicted section with this secure configuration:',
+                  '',
+                  '```javascript',
+                  resolvedContent,
+                  '```',
+                  '',
+                  '**Why this resolution?**',
+                  '- ✅ Removes hardcoded credentials',
+                  '- ✅ Uses environment variables (secure)',
+                  '- ✅ Follows security best practices',
+                  '- ✅ Prevents credential leaks in version control',
+                  '',
+                  '**How to apply**:',
+                  '1. Open `srv/config.js` in your editor',
+                  '2. Find the conflict markers (<<<<<<< HEAD)',
+                  '3. Replace the entire conflict section with the code above',
+                  '4. Remove conflict markers',
+                  '5. Commit: `git add srv/config.js && git commit -m "fix: resolve config merge conflict - use env vars"`',
+                  '',
+                  '**Environment variables needed**:',
+                  '```bash',
+                  'export NODE_ENV=production',
+                  'export PORT=4004',
+                  'export LOG_LEVEL=info',
+                  '```'
+                ].join('\n');
+
+              } else if (strategy.resolution === 'regenerate') {
+                suggestionBody = [
+                  '**Resolution Strategy**: Regenerate lock file',
+                  '',
+                  '⚠️ **Lock files should be regenerated rather than manually merged.**',
+                  '',
+                  '---',
+                  '',
+                  '### 💡 Recommended Action',
+                  '',
+                  'Run these commands to regenerate the lock file:',
+                  '',
+                  '```bash',
+                  'rm package-lock.json',
+                  'npm install',
+                  'git add package-lock.json',
+                  'git commit -m "fix: regenerate package-lock.json"',
+                  'git push',
+                  '```',
+                  '',
+                  '**Why regenerate?**',
+                  '- Lock files contain dependency trees',
+                  '- Manual merging can create inconsistencies',
+                  '- npm/yarn will generate correct resolved state'
+                ].join('\n');
+
+                // No inline suggestion for regenerate strategy
+                return {
+                  path: filePath,
+                  line: startLine + 1,
+                  side: 'RIGHT',
+                  body: suggestionBody
+                };
+
+              } else {
+                // Manual review needed
+                suggestionBody = [
+                  '**Resolution Strategy**: Careful manual review needed',
+                  '',
+                  '**Your changes**:',
+                  '```javascript',
+                  currentLines.slice(0, 20).join('\n') + (currentLines.length > 20 ? '\n  // ...' : ''),
+                  '```',
+                  '',
+                  '**Base branch changes**:',
+                  '```javascript',
+                  baseLines.slice(0, 20).join('\n') + (baseLines.length > 20 ? '\n  // ...' : ''),
+                  '```',
+                  '',
+                  '---',
+                  '',
+                  '### 💡 Resolution Options',
+                  '',
+                  '**Why manual review?** Both branches made substantial changes that require human judgment.',
+                  '',
+                  '**Options**:',
+                  '1. **Keep your changes** (current branch)',
+                  '2. **Keep base branch changes**',
+                  '3. **Merge both changes manually**',
+                  '4. **Write entirely new resolution**',
+                  '',
+                  '**How to resolve**:',
+                  '1. Open the file in your editor',
+                  '2. Carefully review both versions',
+                  '3. Decide which changes to keep or combine',
+                  '4. Edit the file to your desired state',
+                  '5. Remove all conflict markers (<<<<<<, =======, >>>>>>>)',
+                  '6. Test your changes',
+                  '7. Commit the resolved file'
+                ].join('\n');
+
+                return {
+                  path: filePath,
+                  line: startLine + 1,
+                  side: 'RIGHT',
+                  body: suggestionBody
+                };
+              }
+
+              // Return suggestion with resolved content
+              return {
+                path: filePath,
+                line: startLine + 1,
+                side: 'RIGHT',
+                body: suggestionBody
+              };
+            }
+
+      - name: No conflicts detected
+        if: steps.conflict-check.outputs.has_conflicts == 'false' && steps.mergeable-check.outputs.has_api_conflicts == 'false'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.issue.number;
+
+            console.log(`✅ No merge conflicts detected for PR #${prNumber}`);
+
+            // Delete old PRo conflict comments
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber
+            });
+
+            for (const comment of comments) {
+              if (comment.body.includes('🔀 PRo Merge Conflict Analysis') ||
+                  comment.body.includes('⚠️ Merge Conflicts Detected')) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: comment.id
+                });
+                console.log('Deleted old conflict comment');
+              }
+            }
+
+            // Remove conflict labels if present
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                name: 'merge-conflict'
+              });
+              console.log('Removed merge-conflict label');
+            } catch (error) {
+              // Label might not exist
+            }
+
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                name: 'needs-resolution'
+              });
+              console.log('Removed needs-resolution label');
+            } catch (error) {
+              // Label might not exist
+            }
+
+            console.log('✅ No merge conflicts - PR is clean');

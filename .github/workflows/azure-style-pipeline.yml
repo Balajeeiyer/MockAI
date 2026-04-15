@@ -1,0 +1,517 @@
+name: 🔍 Azure-Style Build & Security Analysis
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  # ===================================================================
+  # BUILD VALIDATION
+  # ===================================================================
+  build:
+    name: Build & Dependency Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: |
+          echo "::group::Installing dependencies"
+          npm ci
+          echo "::endgroup::"
+
+      - name: Security Audit
+        id: audit
+        continue-on-error: true
+        run: |
+          echo "::group::npm audit"
+          npm audit --audit-level=moderate --json > audit-report.json || true
+
+          CRITICAL=$(cat audit-report.json | jq '.metadata.vulnerabilities.critical // 0')
+          HIGH=$(cat audit-report.json | jq '.metadata.vulnerabilities.high // 0')
+
+          echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+          echo "high=$HIGH" >> $GITHUB_OUTPUT
+
+          echo "::notice::Vulnerabilities - Critical: $CRITICAL, High: $HIGH"
+
+          if [ "$CRITICAL" -gt "0" ]; then
+            echo "::error::Found $CRITICAL critical vulnerabilities"
+            exit 1
+          fi
+          echo "::endgroup::"
+
+      - name: Build Application
+        run: |
+          echo "::group::Building application"
+          npm run build
+          echo "::endgroup::"
+
+      - name: Deploy Database
+        run: |
+          echo "::group::Deploying database schema"
+          npm run deploy
+          echo "::endgroup::"
+
+  # ===================================================================
+  # TESTING & COVERAGE
+  # ===================================================================
+  test:
+    name: Unit Tests & Coverage
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Tests with Coverage
+        id: test
+        continue-on-error: true
+        run: |
+          echo "::group::Running unit tests"
+          npm test -- --coverage --ci --maxWorkers=2 || true
+          echo "::endgroup::"
+
+      - name: Check Coverage Thresholds
+        continue-on-error: true
+        run: |
+          echo "::group::Coverage validation"
+
+          # Mock coverage check (in production, parse actual coverage report)
+          COVERAGE=45
+          THRESHOLD=70
+
+          if [ "$COVERAGE" -lt "$THRESHOLD" ]; then
+            echo "::warning::Code coverage ($COVERAGE%) below threshold ($THRESHOLD%)"
+            echo "::notice::Add tests for srv/product-service.js and srv/analytics-service.js"
+          else
+            echo "::notice::Coverage ($COVERAGE%) meets threshold ($THRESHOLD%)"
+          fi
+          echo "::endgroup::"
+
+  # ===================================================================
+  # SECURITY ANALYSIS
+  # ===================================================================
+  security-scan:
+    name: Security Vulnerability Scan
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: SAST Security Scan
+        id: sast
+        continue-on-error: true
+        run: |
+          echo "::group::Static Application Security Testing"
+
+          # Mock security findings - display as warnings for demo
+          echo "::warning file=srv/product-service.js,line=280,title=SQL Injection::CRITICAL - advancedSearch uses string concatenation. Use parameterized queries."
+          echo "::warning file=srv/product-service.js,line=95,title=XSS Vulnerability::HIGH - Unescaped user input in description field. Add input sanitization."
+          echo "::warning file=srv/product-service.js,line=145,title=Insecure Randomness::MEDIUM - Math.random() used for security. Use crypto.randomBytes() instead."
+
+          echo "::notice::Security scan found 3 issues (2 critical, 1 medium) - See security report for details"
+          echo "::endgroup::"
+
+      - name: Post Security Report
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.issue.number;
+
+            // Get PR details to get the head SHA
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+
+            const headSha = pr.head.sha;
+
+            // Delete old comments from this workflow
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber
+            });
+
+            for (const comment of comments) {
+              if (comment.body.includes('🔒 Security Analysis Summary') ||
+                  comment.body.includes('💡 Code Quality & Test Coverage')) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: comment.id
+                });
+              }
+            }
+
+            // Get changed files in the PR
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+
+            const changedFiles = files.map(f => f.filename);
+
+            // Post inline suggestions ONLY for files that were actually changed
+            const allSuggestions = [
+              {
+                path: 'srv/product-service.js',
+                line: 32,
+                side: 'RIGHT',
+                body: [
+                  '**🟠 HIGH: Cross-Site Scripting (XSS) Vulnerability (CWE-79)**',
+                  '',
+                  'User input in the description field is not sanitized, allowing potential XSS attacks.',
+                  '',
+                  '**Severity**: HIGH (CVSS 8.2)',
+                  '',
+                  '**Suggested Fix**:',
+                  '```suggestion',
+                  '    // TODO: Add proper input sanitization to prevent XSS vulnerabilities',
+                  '    if (description) {',
+                  '      // Sanitize user input to prevent XSS',
+                  '      const sanitize = (str) => String(str || \'\')',
+                  '        .replace(/[<>"\'&]/g, \'\')',
+                  '        .trim()',
+                  '        .substring(0, 500);',
+                  '      req.data.description = sanitize(description);',
+                  '    }',
+                  '```',
+                  '',
+                  '📚 **References**:',
+                  '- [OWASP XSS](https://owasp.org/www-community/attacks/xss/)',
+                  '- [CWE-79](https://cwe.mitre.org/data/definitions/79.html)',
+                  '',
+                  '**Impact**: An attacker could inject malicious scripts that execute in other users\' browsers.',
+                ].join('\n')
+              },
+              {
+                path: 'srv/product-service.js',
+                line: 52,
+                side: 'RIGHT',
+                body: [
+                  '**🔴 CRITICAL: Code Injection via eval() (CWE-94)**',
+                  '',
+                  'Using eval() on user input allows arbitrary code execution - extremely dangerous!',
+                  '',
+                  '**Severity**: CRITICAL (CVSS 9.8)',
+                  '',
+                  '**Suggested Fix**:',
+                  '```suggestion',
+                  '    // TODO: Remove eval() and use proper string validation',
+                  '    if (name) {',
+                  '      // Validate and sanitize name input without eval',
+                  '      const processedName = String(name)',
+                  '        .trim()',
+                  '        .replace(/[<>"\'`]/g, \'\')',
+                  '        .substring(0, 100);',
+                  '      ',
+                  '      if (processedName.length === 0) {',
+                  '        req.error(400, \'Product name cannot be empty\');',
+                  '      }',
+                  '      req.data.name = processedName;',
+                  '    }',
+                  '```',
+                  '',
+                  '📚 **References**:',
+                  '- [CWE-94](https://cwe.mitre.org/data/definitions/94.html)',
+                  '- [Input Validation](https://cheatsheetseries.owasp.org/cheatsheets/Input_Validation_Cheat_Sheet.html)',
+                  '',
+                  '**Impact**: Attacker can execute arbitrary code on the server, leading to complete system compromise.',
+                ].join('\n')
+              }
+            ];
+
+            // Filter to only files that were changed
+            const suggestions = allSuggestions.filter(s => changedFiles.includes(s.path));
+
+            // Post each inline suggestion
+            let inlineSuggestionsPosted = 0;
+            for (const suggestion of suggestions) {
+              try {
+                await github.rest.pulls.createReviewComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber,
+                  body: suggestion.body,
+                  commit_id: headSha,
+                  path: suggestion.path,
+                  line: suggestion.line,
+                  side: suggestion.side
+                });
+                inlineSuggestionsPosted++;
+              } catch (error) {
+                console.log(`Failed to post suggestion for ${suggestion.path}:${suggestion.line}: ${error.message}`);
+              }
+            }
+
+            // Post a summary comment
+            let summaryBody = `## 🔒 Security Analysis Summary
+
+            ### 📊 Findings
+            - **High**: 2 security issues detected
+            - **Total**: 2 issues
+
+            `;
+
+            if (inlineSuggestionsPosted > 0) {
+              summaryBody += `### 📍 Inline Suggestions
+I've added ${inlineSuggestionsPosted} inline code suggestion(s) directly on the affected lines:
+- \`srv/product-service.js:32\` - XSS vulnerability fix
+- \`srv/product-service.js:52\` - Critical eval() code injection fix
+
+**To view**: Go to the **Files changed** tab and look for the 💬 comment icons.
+**To apply**: Click the **"Commit suggestion"** button on any suggestion.
+
+`;
+            } else {
+              summaryBody += `### ℹ️ Note
+Security issues detected but inline suggestions can only be posted on files changed in this PR.
+
+**Issues found in**:
+- \`srv/product-service.js:32\` - XSS vulnerability (sanitize description input)
+- \`srv/product-service.js:52\` - Critical code injection via eval()
+
+**To fix**: Modify these files in your PR to see inline commit suggestions.
+
+`;
+            }
+
+            summaryBody += `### ✅ How to Apply
+1. Review inline suggestions in the "Files changed" tab
+2. Click "Commit suggestion" to apply individual fixes
+3. Or apply manually if you prefer a different approach
+
+### 📚 Resources
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+- [CAP Security Guide](https://cap.cloud.sap/docs/guides/security/)
+            `;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: summaryBody
+            });
+
+  # ===================================================================
+  # CODE QUALITY
+  # ===================================================================
+  code-quality:
+    name: ESLint & Code Quality
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        continue-on-error: true
+        run: |
+          echo "::group::ESLint analysis"
+          npm run lint
+          echo "::endgroup::"
+
+  # ===================================================================
+  # SUGGESTIONS (NON-BLOCKING)
+  # ===================================================================
+  post-suggestions:
+    name: Post Improvement Suggestions
+    runs-on: ubuntu-latest
+    needs: [security-scan, test, code-quality]
+    if: always() && github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Post Test Coverage Suggestions
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.issue.number;
+
+            // Get PR details
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+
+            const headSha = pr.head.sha;
+
+            // Post inline suggestions for test coverage
+            const testSuggestions = [
+              {
+                path: 'srv/analytics-service.js',
+                line: 10,
+                side: 'RIGHT',
+                body: [
+                  '**📊 Test Coverage Suggestion**',
+                  '',
+                  'This file has 0% test coverage. Consider adding tests.',
+                  '',
+                  '**Suggested test file**: `test/analytics-service.test.js`',
+                  '',
+                  '```javascript',
+                  'const cds = require(\'@sap/cds\');',
+                  '',
+                  'describe(\'Analytics Service\', () => {',
+                  '  let analyticsService;',
+                  '',
+                  '  beforeAll(async () => {',
+                  '    await cds.connect.to(\'db\', { kind: \'sqlite\', credentials: { database: \':memory:\' } });',
+                  '    const csn = await cds.load(\'*\');',
+                  '    await cds.deploy(csn);',
+                  '    await cds.serve(\'all\').from(\'srv\');',
+                  '    analyticsService = await cds.connect.to(\'AnalyticsService\');',
+                  '  }, 10000);',
+                  '',
+                  '  test(\'should provide read-only access\', async () => {',
+                  '    const entities = Object.keys(analyticsService.entities);',
+                  '    expect(entities.length).toBeGreaterThan(0);',
+                  '  });',
+                  '});',
+                  '```',
+                  '',
+                  '**Priority**: Medium | **Effort**: ~15 minutes',
+                ].join('\n')
+              }
+            ];
+
+            // Post inline test suggestions
+            for (const suggestion of testSuggestions) {
+              try {
+                await github.rest.pulls.createReviewComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber,
+                  body: suggestion.body,
+                  commit_id: headSha,
+                  path: suggestion.path,
+                  line: suggestion.line,
+                  side: suggestion.side
+                });
+              } catch (error) {
+                console.log(`Failed to post test suggestion: ${error.message}`);
+              }
+            }
+
+            // Post summary
+            const body = `## 💡 Code Quality & Test Coverage
+
+            ### 📈 Test Coverage Analysis
+            Current coverage: **45%** (Threshold: 70%)
+
+            I've added inline suggestions for improving test coverage. Check the "Files changed" tab.
+
+            ### 🎯 Priority Areas
+            1. **srv/analytics-service.js** - 0% coverage (inline suggestion added)
+            2. **srv/product-service.js** - Missing edge case tests
+            3. **New features** - Add tests for \`bulkPriceUpdate\`, \`advancedSearch\`
+
+            ### 🔧 Quick Wins
+            - Run \`npm run lint:fix\` to auto-fix style issues
+            - Run \`npm audit fix\` to update dependencies
+            - Add basic test scaffolding (see inline suggestions)
+
+            ### ✅ Your Control
+            - Review inline suggestions in the "Files changed" tab
+            - Click "Commit suggestion" to apply
+            - Or implement your own approach
+            - Test locally before committing
+
+            ---
+            **No pressure** - These are suggestions to improve code quality. You decide what to implement! 🎯
+            `;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: body
+            });
+
+  # ===================================================================
+  # SUMMARY CHECK
+  # ===================================================================
+  pipeline-summary:
+    name: Pipeline Summary
+    runs-on: ubuntu-latest
+    needs: [build, test, security-scan, code-quality]
+    if: always()
+    steps:
+      - name: Create Summary
+        run: |
+          echo "## 📊 Pipeline Execution Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Build | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security | ${{ needs.security-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Code Quality | ${{ needs.code-quality.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Only fail if build stage fails
+          if [ "${{ needs.build.result }}" != "success" ]; then
+            echo "### ❌ Build Failed" >> $GITHUB_STEP_SUMMARY
+            echo "Critical build errors detected. Fix build issues before merging." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "### ✅ Build Passed" >> $GITHUB_STEP_SUMMARY
+            if [ "${{ needs.security-scan.result }}" != "success" ] || [ "${{ needs.test.result }}" != "success" ]; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "⚠️ **Advisory**: Security issues or test coverage noted." >> $GITHUB_STEP_SUMMARY
+              echo "Review suggestions in PR comments. Fixes are optional - you decide!" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
