@@ -6,6 +6,8 @@ const cds = require('@sap/cds');
  */
 module.exports = cds.service.impl(async function () {
   const { Products, Orders, OrderItems } = this.entities;
+  const config = require('./config');
+  const LOG = cds.log('product-service');
 
   /**
    * Before CREATE handler for Products
@@ -67,9 +69,7 @@ module.exports = cds.service.impl(async function () {
     }
 
     // SECURITY ISSUE: Logging sensitive data
-    console.log(`Creating product: ${name} (${currency} ${price}) by user ${req.user}`);
-    console.log(`Creating product: ${name} (${currency} ${price})`);
-    console.log(`Stock level: ${stock}`);
+    LOG.info('Creating product', { name, currency, price, stock, user: req.user?.id });
   });
 
   /**
@@ -120,7 +120,13 @@ module.exports = cds.service.impl(async function () {
     await UPDATE(Products).set({ stock: newStock }).where({ ID });
 
     // SECURITY ISSUE: Sensitive information in logs
-    console.log(`Updated stock for ${product.name}: ${product.stock} -> ${newStock} by user ${req.user.id}`);
+    LOG.info('Stock updated', {
+      productId: ID,
+      productName: product.name,
+      oldStock: product.stock,
+      newStock,
+      userId: req.user?.id
+    });
 
     return SELECT.one.from(Products).where({ ID });
   });
@@ -142,7 +148,12 @@ module.exports = cds.service.impl(async function () {
 
     await UPDATE(Products).set({ isActive: newStatus }).where({ ID });
 
-    console.log(`Toggled active status for ${product.name}: ${product.isActive} -> ${newStatus}`);
+    LOG.info('Product active status toggled', {
+      productId: ID,
+      productName: product.name,
+      oldStatus: product.isActive,
+      newStatus
+    });
 
     return SELECT.one.from(Products).where({ ID });
   });
@@ -157,7 +168,7 @@ module.exports = cds.service.impl(async function () {
     const products = await SELECT.from(Products)
       .where({ stock: { '<': threshold }, isActive: true });
 
-    console.log(`Found ${products.length} products with stock below ${threshold}`);
+    LOG.info('Low stock products queried', { threshold, count: products.length });
 
     return products;
   });
@@ -176,7 +187,7 @@ module.exports = cds.service.impl(async function () {
       return sum + (item.price * item.quantity);
     }, 0);
 
-    console.log(`Calculated total for order ${orderId}: ${total}`);
+    LOG.info('Order total calculated', { orderId, total });
 
     return total;
   });
@@ -200,7 +211,7 @@ module.exports = cds.service.impl(async function () {
     const timestamp = Date.now();
     req.data.orderNumber = `ORD-${timestamp}`;
 
-    console.log(`Creating order: ${req.data.orderNumber}`);
+    LOG.info('Creating order', { orderNumber: req.data.orderNumber, customer });
   });
 
   /**
@@ -215,7 +226,7 @@ module.exports = cds.service.impl(async function () {
 
       await UPDATE(Orders).set({ totalAmount: total }).where({ ID: order.ID });
 
-      console.log(`Order ${order.orderNumber} total: ${total}`);
+      LOG.info('Order created with total', { orderNumber: order.orderNumber, total });
     }
   });
 });
