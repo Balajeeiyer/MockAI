@@ -895,39 +895,41 @@ jobs:
       - name: Dispatch to dependent repos
         if: steps.check-changes.outputs.api_changed == 'true' && steps.read-config.outputs.repos != '[]'
         env:
-          GH_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           REPOS='${{ steps.read-config.outputs.repos }}'
 
-          echo "$REPOS" | node -e "
+          echo "$REPOS" | node << 'EOF'
             const repos = JSON.parse(require('fs').readFileSync(0, 'utf-8'));
+            const { execSync } = require('child_process');
 
             repos.forEach(repo => {
               const payload = {
-                event_type: 'external-integration-test',
-                client_payload: {
-                  source_repo: '${{ github.repository }}',
-                  source_pr: ${{ github.event.pull_request.number }},
-                  source_branch: '${{ github.head_ref }}',
-                  source_sha: '${{ github.event.pull_request.head.sha }}',
-                  pr_url: '${{ github.event.pull_request.html_url }}',
-                  pr_title: \`${{ github.event.pull_request.title }}\`,
-                  triggered_by: '${{ github.actor }}',
-                  dependencies: repo.dependencies,
-                  critical: repo.critical || false
-                }
+                source_repo: '${{ github.repository }}',
+                source_pr: ${{ github.event.pull_request.number }},
+                source_branch: '${{ github.head_ref }}',
+                source_sha: '${{ github.event.pull_request.head.sha }}',
+                pr_url: '${{ github.event.pull_request.html_url }}',
+                pr_title: '${{ github.event.pull_request.title }}',
+                triggered_by: '${{ github.actor }}',
+                dependencies: repo.dependencies,
+                critical: repo.critical || false
               };
 
-              console.log(\`Dispatching to \${repo.repository}...\`);
+              console.log(`Dispatching to ${repo.repository}...`);
               console.log('Payload:', JSON.stringify(payload, null, 2));
 
-              // Use GitHub CLI to dispatch
-              require('child_process').execSync(
-                \`gh api repos/\${repo.repository}/dispatches -f event_type=external-integration-test -F 'client_payload=\${JSON.stringify(payload.client_payload)}'\`,
-                {stdio: 'inherit', env: process.env}
-              );
+              try {
+                const payloadJson = JSON.stringify(payload);
+                const cmd = `gh api repos/${repo.repository}/dispatches -f event_type=external-integration-test -f 'client_payload=${payloadJson}'`;
+                console.log('Command:', cmd);
+                execSync(cmd, {stdio: 'inherit', env: process.env});
+                console.log(`✓ Dispatched to ${repo.repository}`);
+              } catch (error) {
+                console.error(`✗ Failed to dispatch to ${repo.repository}:`, error.message);
+              }
             });
-          "
+EOF
 
       - name: Create tracking comment
         if: steps.check-changes.outputs.api_changed == 'true'
