@@ -937,7 +937,7 @@ jobs:
         if: steps.api-changes.outputs.has_api_changes == 'true'
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.CROSS_REPO_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
             const dependentRepos = ${{ steps.read-config.outputs.result }};
 
@@ -948,10 +948,22 @@ jobs:
 
             console.log('Dispatching integration tests to ' + dependentRepos.length + ' repositories...');
 
+            // Check if we have a token with cross-repo permissions
+            const hasCrossRepoToken = '${{ secrets.CROSS_REPO_TOKEN }}' !== '';
+
+            if (!hasCrossRepoToken) {
+              console.log('⚠️ WARNING: CROSS_REPO_TOKEN not configured. Using GITHUB_TOKEN (limited permissions).');
+              console.log('GITHUB_TOKEN cannot trigger workflows in other repositories.');
+              console.log('To enable cross-repo testing:');
+              console.log('1. Create a Personal Access Token with repo scope');
+              console.log('2. Add it as CROSS_REPO_TOKEN secret in repository settings');
+              console.log('3. See: https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token');
+            }
+
             for (const repo of dependentRepos) {
               const [owner, repoName] = repo.repository.split('/');
 
-              console.log('Dispatching to: ' + repo.repository);
+              console.log('Attempting to dispatch to: ' + repo.repository);
 
               try {
                 await github.rest.repos.createDispatchEvent({
@@ -968,9 +980,16 @@ jobs:
                   }
                 });
 
-                console.log('Successfully dispatched to ' + repo.repository);
+                console.log('✅ Successfully dispatched to ' + repo.repository);
               } catch (error) {
-                console.error('Failed to dispatch to ' + repo.repository + ':', error.message);
+                console.error('❌ Failed to dispatch to ' + repo.repository + ':', error.message);
+
+                if (error.status === 404) {
+                  console.error('   Repository not found or no access. Check repository exists and token has permissions.');
+                } else if (error.status === 403) {
+                  console.error('   Permission denied. GITHUB_TOKEN cannot trigger workflows in other repos.');
+                  console.error('   Add CROSS_REPO_TOKEN secret with repo scope to enable cross-repo testing.');
+                }
               }
             }
 
@@ -986,22 +1005,65 @@ jobs:
               return;
             }
 
-            let comment = '## Cross-Repository Integration Tests Triggered\n\n';
-            comment += 'API changes detected. Dispatched integration tests to **' + dependentRepos.length + '** dependent repositories:\n\n';
+            const hasCrossRepoToken = '${{ secrets.CROSS_REPO_TOKEN }}' !== '';
 
-            for (const repo of dependentRepos) {
-              comment += '- **[' + repo.name + '](https://github.com/' + repo.repository + ')** ';
-              if (repo.critical) {
-                comment += '(CRITICAL) ';
+            let comment = '## 🔗 Cross-Repository Integration Tests\n\n';
+
+            if (!hasCrossRepoToken) {
+              comment += '⚠️ **Configuration Required** - Cross-repo testing is not fully enabled.\n\n';
+              comment += '### Status\n\n';
+              comment += '- API changes detected ✅\n';
+              comment += '- Dependent repositories identified: **' + dependentRepos.length + '**\n';
+              comment += '- Dispatch attempted ⚠️ (requires CROSS_REPO_TOKEN)\n\n';
+              comment += '### Dependent Repositories\n\n';
+
+              for (const repo of dependentRepos) {
+                comment += '- **[' + repo.name + '](https://github.com/' + repo.repository + ')** ';
+                if (repo.critical) {
+                  comment += '🔴 CRITICAL ';
+                }
+                comment += '- Est. ' + (repo.estimated_duration / 60) + ' min\n';
               }
-              comment += '- Est. ' + (repo.estimated_duration / 60) + ' min\n';
+
+              comment += '\n### ⚙️ Setup Required\n\n';
+              comment += 'To enable automatic cross-repository testing:\n\n';
+              comment += '1. **Create Personal Access Token (classic)**\n';
+              comment += '   - Go to: https://github.com/settings/tokens/new\n';
+              comment += '   - Select scope: `repo` (Full control of private repositories)\n';
+              comment += '   - Generate token and copy it\n\n';
+              comment += '2. **Add Token to Repository Secrets**\n';
+              comment += '   - Go to: https://github.com/' + context.repo.owner + '/' + context.repo.repo + '/settings/secrets/actions\n';
+              comment += '   - Click "New repository secret"\n';
+              comment += '   - Name: `CROSS_REPO_TOKEN`\n';
+              comment += '   - Value: (paste your token)\n\n';
+              comment += '3. **Re-run Workflow**\n';
+              comment += '   - Close and reopen this PR, or\n';
+              comment += '   - Push an empty commit: `git commit --allow-empty -m "trigger workflow"`\n\n';
+              comment += '### Alternative: Manual Testing\n\n';
+              comment += 'While cross-repo testing is being configured, you can manually trigger integration tests:\n\n';
+              comment += '1. Go to: https://github.com/' + dependentRepos[0].repository + '/actions/workflows/external-integration-test.yml\n';
+              comment += '2. Click "Run workflow"\n';
+              comment += '3. Enter MockAI PR number: **' + context.issue.number + '**\n';
+              comment += '4. Click "Run workflow"\n\n';
+            } else {
+              comment += '✅ **Integration tests dispatched successfully!**\n\n';
+              comment += 'API changes detected. Dispatched integration tests to **' + dependentRepos.length + '** dependent repositories:\n\n';
+
+              for (const repo of dependentRepos) {
+                comment += '- **[' + repo.name + '](https://github.com/' + repo.repository + ')** ';
+                if (repo.critical) {
+                  comment += '🔴 CRITICAL ';
+                }
+                comment += '- Est. ' + (repo.estimated_duration / 60) + ' min\n';
+              }
+
+              comment += '\n### What happens next?\n\n';
+              comment += '1. Integration tests will run in each dependent repository\n';
+              comment += '2. Results will appear as **GitHub Checks** on this PR\n';
+              comment += '3. Any failures will be reported with detailed logs\n';
+              comment += '4. All tests must pass before this PR can be merged\n\n';
             }
 
-            comment += '\n### What happens next?\n\n';
-            comment += '1. Integration tests will run in each dependent repository\n';
-            comment += '2. Results will appear as **GitHub Checks** on this PR\n';
-            comment += '3. Any failures will be reported with detailed logs\n';
-            comment += '4. All tests must pass before this PR can be merged\n\n';
             comment += '### Test Coverage\n\n';
             comment += '- Schema validation (OData $metadata compatibility)\n';
             comment += '- Integration tests (CRUD operations)\n';
