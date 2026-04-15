@@ -935,7 +935,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const repos = JSON.parse('${{ steps.read-config.outputs.repos }}');
-            const repoList = repos.map(r => `- [${r.name}](${r.repository}) - Estimated: ${r.estimated_duration}s`).join('\n');
+            const repoList = repos.map(r => `- [${r.name}](${r.repository}) - Estimated: ${r.estimated_duration}`).join('\n');
 
             const comment = `## 🔄 Cross-Repository Integration Tests Triggered
 
