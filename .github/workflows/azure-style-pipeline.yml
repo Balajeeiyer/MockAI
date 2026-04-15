@@ -157,64 +157,73 @@ jobs:
             const body = `## 🔒 Security Analysis Report
 
             ### 📊 Summary
-            - **Total Issues**: 5
+            - **Total Issues**: 3
             - **Critical**: 2 🔴
-            - **High**: 2 🟠
+            - **High**: 0 🟠
             - **Medium**: 1 🟡
 
             ---
 
             ### 🚨 Critical Issues
 
-            #### 1. SQL Injection Vulnerability
+            #### 1. SQL Injection Vulnerability (CWE-89)
             - **Location**: \`srv/product-service.js:280\`
             - **Severity**: CRITICAL (CVSS 9.8)
-            - **CWE**: CWE-89
 
-            **Vulnerable Code**:
-            \`\`\`javascript
-            const query = \`SELECT * FROM Products WHERE name LIKE '%\${searchTerm}%'\`;
-            \`\`\`
+            **Issue**: The \`advancedSearch\` function uses string concatenation to build queries.
 
-            **Fix**:
+            **Recommendation**:
             \`\`\`javascript
-            // Use parameterized queries
+            // Use parameterized queries with CAP CQL
             const products = await SELECT.from(Products)
               .where({ name: { like: \`%\${searchTerm}%\` } });
             \`\`\`
 
             ---
 
-            #### 2. Cross-Site Scripting (XSS)
+            #### 2. Cross-Site Scripting (XSS) (CWE-79)
             - **Location**: \`srv/product-service.js:95\`
             - **Severity**: HIGH (CVSS 8.2)
-            - **CWE**: CWE-79
 
-            **Vulnerable Code**:
-            \`\`\`javascript
-            product.description = req.data.description; // No sanitization
-            \`\`\`
+            **Issue**: User input in description field is not sanitized.
 
-            **Fix**:
+            **Recommendation**:
             \`\`\`javascript
+            // Add input sanitization
             const sanitize = (str) => String(str || '').replace(/[<>"'&]/g, '').trim();
             product.description = sanitize(req.data.description);
             \`\`\`
 
             ---
 
-            ### 🔧 Automated Fixes Available
+            ### ⚠️ Medium Issues
 
-            Run the automated fix script:
-            \`\`\`bash
-            # Download and run the fix script
-            ./scripts/simulate-azure-pipeline.sh
-            ./fix-pipeline-issues.sh
+            #### 3. Insecure Randomness (CWE-330)
+            - **Location**: \`srv/product-service.js:145\`
+            - **Severity**: MEDIUM (CVSS 6.5)
+
+            **Recommendation**:
+            \`\`\`javascript
+            const crypto = require('crypto');
+            const sessionId = crypto.randomBytes(16).toString('hex');
             \`\`\`
 
             ---
 
-            ### 📚 Resources
+            ### 💡 How to Fix
+
+            **Option 1: Manual Fixes** (Recommended - You control what gets committed)
+            1. Review each issue above
+            2. Apply the fixes you want
+            3. Test locally: \`npm test\`
+            4. Commit and push your changes
+
+            **Option 2: Request Automated Assistance**
+            Comment on this PR with what you'd like fixed, and maintainers can help.
+
+            ---
+
+            ### 📚 References
             - [OWASP Top 10](https://owasp.org/www-project-top-ten/)
             - [CAP Security Guide](https://cap.cloud.sap/docs/guides/security/)
             - [CWE-89: SQL Injection](https://cwe.mitre.org/data/definitions/89.html)
@@ -256,81 +265,48 @@ jobs:
           echo "::endgroup::"
 
   # ===================================================================
-  # AUTOMATED FIX GENERATION
+  # SUGGESTIONS (NON-BLOCKING)
   # ===================================================================
-  generate-fixes:
-    name: Generate Automated Fixes
+  post-suggestions:
+    name: Post Improvement Suggestions
     runs-on: ubuntu-latest
     needs: [security-scan, test, code-quality]
     if: always() && github.event_name == 'pull_request'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Generate Fix Script
-        run: |
-          cat > fix-pipeline-issues.sh << 'EOF'
-          #!/bin/bash
-          echo "🤖 Applying automated fixes..."
-
-          # Create sanitization utility
-          mkdir -p srv/utils
-          cat > srv/utils/sanitize.js << 'SANITIZE'
-          module.exports = {
-            sanitizeString: (str, maxLength = 500) => {
-              if (!str) return '';
-              return String(str).replace(/[<>"'&]/g, '').trim().substring(0, maxLength);
-            }
-          };
-          SANITIZE
-
-          # Add missing tests
-          cat > test/analytics-service.test.js << 'TEST'
-          const cds = require('@sap/cds');
-          describe('Analytics Service', () => {
-            test('should be defined', () => {
-              expect(true).toBe(true);
-            });
-          });
-          TEST
-
-          npm run lint:fix
-          npm audit fix
-
-          echo "✅ Fixes applied. Review with: git diff"
-          EOF
-
-          chmod +x fix-pipeline-issues.sh
-
-      - name: Post Fix Instructions
+      - name: Post Suggestions
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const body = `## 🔧 Automated Fixes Available
+            const body = `## 💡 Suggested Improvements
 
-            The pipeline has generated an automated fix script to resolve the issues found.
+            Based on the analysis, here are some improvements you might consider:
 
-            ### Quick Fix
-            \`\`\`bash
-            # Apply all automated fixes
-            curl -o fix.sh "${{ github.server_url }}/${{ github.repository }}/raw/${{ github.head_ref }}/fix-pipeline-issues.sh"
-            chmod +x fix.sh && ./fix.sh
+            ### 📈 Test Coverage
+            Current coverage is below the 70% threshold. Consider adding tests for:
+            - \`srv/analytics-service.js\` - Currently has 0% coverage
+            - \`srv/product-service.js\` - Edge cases for validation logic
+            - New features like \`bulkPriceUpdate\` and \`advancedSearch\`
 
-            # Review and commit
-            git diff
-            git add -A
-            git commit -m "fix: apply automated pipeline fixes"
-            git push
-            \`\`\`
+            ### 🔒 Security Enhancements
+            See the Security Analysis Report above for specific vulnerabilities and fixes.
 
-            ### Manual Fixes Required
-            - Update test coverage in \`srv/product-service.js\`
-            - Add integration tests for new features
-            - Review security findings in the Security Analysis Report
+            ### 🎨 Code Quality
+            Run \`npm run lint:fix\` to automatically fix style issues.
 
-            ### Re-run Pipeline
-            Once fixes are applied, the pipeline will automatically re-run on push.
+            ### 📦 Dependencies
+            Run \`npm audit fix\` to update vulnerable dependencies.
+
+            ---
+
+            ### ✅ Next Steps (Your Choice)
+            1. Review the issues flagged above
+            2. Decide which ones to fix now
+            3. Make your changes locally
+            4. Test: \`npm test\`
+            5. Commit and push
+
+            **No automated commits** - you're in control! 🎯
             `;
 
             await github.rest.issues.createComment({
@@ -370,7 +346,7 @@ jobs:
             echo "### ✅ Build Passed" >> $GITHUB_STEP_SUMMARY
             if [ "${{ needs.security-scan.result }}" != "success" ] || [ "${{ needs.test.result }}" != "success" ]; then
               echo "" >> $GITHUB_STEP_SUMMARY
-              echo "⚠️ **Warnings**: Security issues or test coverage below threshold." >> $GITHUB_STEP_SUMMARY
-              echo "Review the automated fix suggestions in the PR comments." >> $GITHUB_STEP_SUMMARY
+              echo "⚠️ **Advisory**: Security issues or test coverage noted." >> $GITHUB_STEP_SUMMARY
+              echo "Review suggestions in PR comments. Fixes are optional - you decide!" >> $GITHUB_STEP_SUMMARY
             fi
           fi
