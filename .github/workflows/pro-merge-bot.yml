@@ -26,6 +26,34 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.ref }}
 
+      - name: Check PR Mergeable State
+        id: mergeable-check
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+
+            console.log(`PR mergeable state: ${pr.mergeable_state}`);
+            console.log(`PR mergeable: ${pr.mergeable}`);
+
+            core.setOutput('mergeable_state', pr.mergeable_state);
+            core.setOutput('mergeable', pr.mergeable);
+
+            // mergeable_state can be: 'clean', 'dirty', 'unstable', 'blocked', 'behind', 'unknown'
+            // mergeable can be: true, false, null
+            if (pr.mergeable === false || pr.mergeable_state === 'dirty') {
+              console.log('⚠️ PR has merge conflicts (GitHub API)');
+              core.setOutput('has_api_conflicts', 'true');
+            } else {
+              console.log('✅ PR is mergeable (GitHub API)');
+              core.setOutput('has_api_conflicts', 'false');
+            }
+
       - name: Configure Git
         run: |
           git config user.name "github-actions[bot]"
@@ -39,6 +67,8 @@ jobs:
         id: conflict-check
         continue-on-error: true
         run: |
+          echo "Checking for merge conflicts..."
+
           # Attempt merge to detect conflicts
           git merge --no-commit --no-ff origin/${{ github.event.pull_request.base.ref }} > /tmp/merge-output.txt 2>&1 || true
 
@@ -46,18 +76,18 @@ jobs:
           if git diff --name-only --diff-filter=U | grep -q .; then
             echo "has_conflicts=true" >> $GITHUB_OUTPUT
             git diff --name-only --diff-filter=U > /tmp/conflict-files.txt
-            echo "Conflicts detected in:"
+            echo "✅ Conflicts detected in:"
             cat /tmp/conflict-files.txt
           else
             echo "has_conflicts=false" >> $GITHUB_OUTPUT
-            echo "No merge conflicts detected"
+            echo "✅ No merge conflicts detected"
           fi
 
           # Abort the merge
-          git merge --abort || true
+          git merge --abort 2>/dev/null || true
 
       - name: Analyze and resolve conflicts
-        if: steps.conflict-check.outputs.has_conflicts == 'true'
+        if: steps.conflict-check.outputs.has_conflicts == 'true' || steps.mergeable-check.outputs.has_api_conflicts == 'true'
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -69,12 +99,16 @@ jobs:
             const baseRef = context.payload.pull_request.base.ref;
             const headRef = context.payload.pull_request.head.ref;
 
+            console.log(`🔍 Analyzing PR #${prNumber}: ${headRef} -> ${baseRef}`);
+
             // Get PR details
             const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
               pull_number: prNumber
             });
+
+            console.log(`PR mergeable state: ${pr.mergeable_state}, mergeable: ${pr.mergeable}`);
 
             const headSha = pr.head.sha;
 
@@ -628,12 +662,14 @@ jobs:
             }
 
       - name: No conflicts detected
-        if: steps.conflict-check.outputs.has_conflicts == 'false'
+        if: steps.conflict-check.outputs.has_conflicts == 'false' && steps.mergeable-check.outputs.has_api_conflicts == 'false'
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const prNumber = context.issue.number;
+
+            console.log(`✅ No merge conflicts detected for PR #${prNumber}`);
 
             // Delete old PRo conflict comments
             const { data: comments } = await github.rest.issues.listComments({
@@ -650,6 +686,7 @@ jobs:
                   repo: context.repo.repo,
                   comment_id: comment.id
                 });
+                console.log('Deleted old conflict comment');
               }
             }
 
@@ -661,6 +698,7 @@ jobs:
                 issue_number: prNumber,
                 name: 'merge-conflict'
               });
+              console.log('Removed merge-conflict label');
             } catch (error) {
               // Label might not exist
             }
@@ -672,8 +710,9 @@ jobs:
                 issue_number: prNumber,
                 name: 'needs-resolution'
               });
+              console.log('Removed needs-resolution label');
             } catch (error) {
               // Label might not exist
             }
 
-            console.log('✅ No merge conflicts detected');
+            console.log('✅ No merge conflicts - PR is clean');
