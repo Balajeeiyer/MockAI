@@ -12,7 +12,7 @@ settings:
 
 dependent_repos:
   - name: OrderService
-    repository: Balajeeiyer/order-service
+    repository: Balajeeiyer/OrderService
     branch: main
     code_owners:
       - '@Balajeeiyer'
