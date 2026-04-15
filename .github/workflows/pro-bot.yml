@@ -1,11 +1,6 @@
 name: 🚀 PRo - PR Optimiser (AI Analysis)
 
 on:
-  pull_request_target:
-    types: [opened, synchronize, reopened]
-    branches:
-      - main
-      - master
   pull_request:
     types: [opened, synchronize, reopened]
     branches:
@@ -48,10 +43,12 @@ jobs:
               pull_number: context.issue.number
             });
 
+            const changedFiles = files.map(f => f.filename);
+
             core.setOutput('file_count', files.length);
             core.setOutput('additions', pr.additions);
             core.setOutput('deletions', pr.deletions);
-            core.setOutput('changed_files', pr.changed_files);
+            core.setOutput('changed_files', JSON.stringify(changedFiles));
             core.setOutput('head_sha', pr.head.sha);
 
             return files;
@@ -445,7 +442,7 @@ jobs:
               }
             ];
 
-            // Get changed files in the PR
+            // Get changed files in the PR (directly, not from previous step)
             const { data: prFiles } = await github.rest.pulls.listFiles({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -477,10 +474,6 @@ jobs:
               }
             }
 
-            // Save filtered suggestions count for next step
-            core.setOutput('filtered_suggestions_count', filteredSuggestions.length);
-            core.setOutput('changed_files', JSON.stringify(changedFiles));
-
       - name: Analyze Code and Post Review
         uses: actions/github-script@v6
         with:
@@ -491,7 +484,15 @@ jobs:
             const fileCount = ${{ steps.pr-files.outputs.file_count }};
             const additions = ${{ steps.pr-files.outputs.additions }};
             const deletions = ${{ steps.pr-files.outputs.deletions }};
-            const changedFiles = JSON.parse('${{ steps.pr-files.outputs.changed_files }}' || '[]');
+
+            // Get changed files in the PR (directly)
+            const { data: prFiles } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            const changedFiles = prFiles.map(f => f.filename);
+            console.log('Changed files in PR:', changedFiles);
 
             // Generate correlation ID
             const correlationId = require('crypto').randomUUID();
@@ -629,7 +630,7 @@ jobs:
               issue_number: prNumber,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: finalReviewBody
+              body: reviewBody
             });
 
       - name: Request Reviews from Bots
