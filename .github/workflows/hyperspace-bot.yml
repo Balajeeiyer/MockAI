@@ -179,14 +179,14 @@ jobs:
             exit 0
           fi
 
-          npm install js-yaml
-          node -e "
+          npm install --no-save js-yaml
+          node << 'EOF'
             const yaml = require('js-yaml');
             const fs = require('fs');
             const config = yaml.load(fs.readFileSync('.github/dependent-repos.yml', 'utf8'));
             const repos = config.dependent_repos || [];
-            fs.writeFileSync(process.env.GITHUB_OUTPUT, 'repos=' + JSON.stringify(repos) + '\n', {flag: 'a'});
-          "
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'repos=' + JSON.stringify(repos) + '\n');
+EOF
 
       - name: Dispatch to dependent repos
         if: steps.check-changes.outputs.api_changed == 'true' && steps.read-config.outputs.repos != '[]'
