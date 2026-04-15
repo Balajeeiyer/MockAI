@@ -333,6 +333,28 @@ jobs:
                 };
               }
 
+              // Check if it's srv/config.js - special handling for config conflicts
+              if (filePath === 'srv/config.js') {
+                // Check if feature branch has hardcoded credentials and main has environment config
+                if (currentCode.includes('hardcoded') || currentCode.includes('database:') || currentCode.includes('apiKeys:')) {
+                  if (baseCode.includes('environment:') || baseCode.includes('process.env')) {
+                    return {
+                      name: 'Accept main branch (secure config)',
+                      description: 'Main branch uses environment variables - more secure than hardcoded values',
+                      resolution: 'accept-base'
+                    };
+                  }
+                }
+                // If main has better security, prefer it
+                if (baseCode.includes('process.env') && !currentCode.includes('process.env')) {
+                  return {
+                    name: 'Merge configurations',
+                    description: 'Combine environment config from main with other settings',
+                    resolution: 'merge-config'
+                  };
+                }
+              }
+
               // Check if it's import/dependency related
               if (currentCode.includes('import') || currentCode.includes('require') ||
                   baseCode.includes('import') || baseCode.includes('require')) {
@@ -437,6 +459,59 @@ jobs:
                   '**Why this resolution?** Both sets of changes can coexist.',
                   '',
                   '_Click "Commit suggestion" to accept this resolution._'
+                ].join('\n');
+
+              } else if (strategy.resolution === 'merge-config') {
+                // Special handling for config file merges
+                // Prefer main branch's environment config approach
+                resolvedContent = [
+                  '  /**',
+                  '   * Environment configuration',
+                  '   * Load from environment variables for security',
+                  '   */',
+                  '  environment: {',
+                  '    nodeEnv: process.env.NODE_ENV || \'development\',',
+                  '    port: process.env.PORT || 4004,',
+                  '    logLevel: process.env.LOG_LEVEL || \'info\'',
+                  '  },'
+                ].join('\n');
+
+                suggestionBody = [
+                  '**🔀 MERGE CONFLICT: Configuration Security Improvement**',
+                  '',
+                  '**Resolution Strategy**: Use environment-based configuration (main branch)',
+                  '',
+                  '**Your branch**:',
+                  '```javascript',
+                  currentLines.slice(0, 10).join('\n') + (currentLines.length > 10 ? '\n...' : ''),
+                  '```',
+                  '*Contains hardcoded credentials - security risk!*',
+                  '',
+                  '**Main branch**:',
+                  '```javascript',
+                  baseLines.join('\n'),
+                  '```',
+                  '*Uses environment variables - secure approach!*',
+                  '',
+                  '**Recommended resolution**:',
+                  '```suggestion',
+                  resolvedContent,
+                  '```',
+                  '',
+                  '**Why this resolution?**',
+                  '- ✅ Removes hardcoded credentials',
+                  '- ✅ Uses environment variables (secure)',
+                  '- ✅ Follows security best practices',
+                  '- ✅ Prevents credential leaks in version control',
+                  '',
+                  '**Note**: After merging, configure these environment variables:',
+                  '```bash',
+                  'export NODE_ENV=production',
+                  'export PORT=4004',
+                  'export LOG_LEVEL=info',
+                  '```',
+                  '',
+                  '_Click "Commit suggestion" to apply secure configuration._'
                 ].join('\n');
 
               } else if (strategy.resolution === 'regenerate') {
