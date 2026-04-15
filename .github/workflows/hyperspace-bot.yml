@@ -852,7 +852,7 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: npm install js-yaml
+        run: npm install --no-save js-yaml@4.1.0
 
       - name: Check for API changes
         id: check-changes
