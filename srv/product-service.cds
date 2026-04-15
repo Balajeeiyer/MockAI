@@ -21,6 +21,11 @@ service ProductService @(path: '/products') {
      * Activate/Deactivate product
      */
     action toggleActive() returns Products;
+
+    /**
+     * NEW ACTION: Validate SKU uniqueness
+     */
+    action validateSKU(sku : String) returns Boolean;
   };
 
   /**

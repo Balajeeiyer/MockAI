@@ -184,6 +184,39 @@ module.exports = cds.service.impl(async function () {
   });
 
   /**
+   * NEW ACTION: Validate SKU
+   * Checks if a SKU is unique across all products
+   */
+  this.on('validateSKU', Products, async (req) => {
+    const { ID } = req.params[0];
+    const { sku } = req.data;
+
+    if (!sku || sku.trim().length === 0) {
+      return req.error(400, 'SKU is required');
+    }
+
+    try {
+      // Check if SKU already exists (excluding current product)
+      const existing = await SELECT.one.from(Products)
+        .where({ sku: sku })
+        .and({ ID: { '!=': ID } });
+
+      const isUnique = !existing;
+
+      LOG.info('SKU validation', {
+        productId: ID,
+        sku: sku,
+        isUnique: isUnique
+      });
+
+      return isUnique;
+    } catch (error) {
+      LOG.error('SKU validation failed', { ID, sku, error: error.message });
+      return req.error(500, 'Failed to validate SKU');
+    }
+  });
+
+  /**
    * Custom function: Calculate Order Total
    * Calculates total amount for an order
    */
