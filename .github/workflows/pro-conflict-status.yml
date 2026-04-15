@@ -1,0 +1,188 @@
+name: 🔍 PRo - Conflict Status Check
+
+# This workflow runs even when there are merge conflicts
+# Uses pull_request_target to execute in base branch context
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  issues: write
+  statuses: write
+
+jobs:
+  check-mergeable:
+    name: Check PR Mergeable Status
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check PR Mergeable State
+        id: check-conflicts
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.issue.number;
+
+            console.log(`🔍 Checking PR #${prNumber} mergeable status...`);
+
+            // Get PR details
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+
+            console.log(`PR mergeable: ${pr.mergeable}`);
+            console.log(`PR mergeable_state: ${pr.mergeable_state}`);
+            console.log(`PR draft: ${pr.draft}`);
+
+            const hasConflicts = pr.mergeable === false || pr.mergeable_state === 'dirty';
+
+            if (hasConflicts) {
+              console.log('⚠️ PR has merge conflicts');
+
+              // Trigger the full conflict resolution workflow
+              core.setOutput('has_conflicts', 'true');
+
+              // Post a comment explaining the conflict detection
+              const comment = `## 🔍 PRo Conflict Detection
+
+              **Status**: ⚠️ Merge conflicts detected
+
+              GitHub has blocked automatic workflows because this PR has merge conflicts.
+
+              **What PRo is doing:**
+              - Running conflict analysis in separate workflow
+              - Will post detailed resolution suggestions shortly
+              - Check back in ~1 minute for conflict analysis
+
+              **Detected state:**
+              - \`mergeable\`: ${pr.mergeable}
+              - \`mergeable_state\`: ${pr.mergeable_state}
+
+              ---
+              *🤖 PRo Conflict Status Check - This workflow runs even with conflicts*
+              `;
+
+              // Check if comment already exists
+              const { data: comments } = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber
+              });
+
+              const existingComment = comments.find(c =>
+                c.body.includes('🔍 PRo Conflict Detection')
+              );
+
+              if (!existingComment) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  body: comment
+                });
+                console.log('Posted conflict detection comment');
+              }
+
+              // Add labels
+              try {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  labels: ['merge-conflict', 'needs-resolution']
+                });
+                console.log('Added conflict labels');
+              } catch (error) {
+                console.log('Error adding labels:', error.message);
+              }
+
+              // Create a check run to show conflict status
+              try {
+                await github.rest.checks.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: 'PRo Merge Conflict Analysis',
+                  head_sha: pr.head.sha,
+                  status: 'completed',
+                  conclusion: 'action_required',
+                  output: {
+                    title: 'Merge Conflicts Detected',
+                    summary: 'This PR has merge conflicts that must be resolved.',
+                    text: 'PRo has detected merge conflicts. A detailed analysis with resolution suggestions will be posted in the PR comments.'
+                  }
+                });
+                console.log('Created conflict check run');
+              } catch (error) {
+                console.log('Error creating check run:', error.message);
+              }
+
+            } else {
+              console.log('✅ PR is mergeable - no conflicts');
+              core.setOutput('has_conflicts', 'false');
+
+              // Remove conflict labels if they exist
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  name: 'merge-conflict'
+                });
+                console.log('Removed merge-conflict label');
+              } catch (error) {
+                // Label might not exist
+              }
+
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  name: 'needs-resolution'
+                });
+                console.log('Removed needs-resolution label');
+              } catch (error) {
+                // Label might not exist
+              }
+
+              // Delete conflict detection comments
+              const { data: comments } = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber
+              });
+
+              for (const comment of comments) {
+                if (comment.body.includes('🔍 PRo Conflict Detection')) {
+                  await github.rest.issues.deleteComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    comment_id: comment.id
+                  });
+                  console.log('Deleted old conflict detection comment');
+                }
+              }
+            }
+
+      - name: Trigger Conflict Resolution Workflow
+        if: steps.check-conflicts.outputs.has_conflicts == 'true'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            console.log('⚡ Triggering conflict resolution analysis...');
+
+            // The detailed analysis will be done by the pro-merge-bot workflow
+            // This step just ensures we've detected the conflicts
+
+            console.log('✅ Conflict detection complete - detailed analysis in progress');
