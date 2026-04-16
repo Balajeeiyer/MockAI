@@ -12,6 +12,7 @@ entity Products : cuid, managed {
       price       : Decimal(10, 2) @mandatory;
       currency    : String(3) default 'USD';
       stock       : Integer default 0;
+      maxStock    : Integer default 1000; // Maximum stock capacity for warehouse
       category    : Association to Categories;
       supplier    : Association to Suppliers;
       isActive    : Boolean default true;
