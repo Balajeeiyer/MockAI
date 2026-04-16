@@ -106,10 +106,15 @@ The UI communicates with the backend via OData V4 protocol with automatic expand
 Product validation (enforced in `srv/product-service.js` before CREATE):
 
 - **Price**: Required, > 0, ≤ 999,999.99
-- **Currency**: Must be USD, EUR, GBP, or INR
+- **Currency**: Must be USD, EUR, GBP, or INR (defined in `srv/config.js`)
 - **Stock**: ≥ 0, ≤ 999,999
 - **Name**: Required, not empty after trim, ≤ 100 characters
 - **Description**: Optional, ≤ 500 characters
+
+**IMPORTANT**: The codebase intentionally contains security vulnerabilities for PRo testing:
+- `srv/product-service.js:52-61`: eval() usage (CRITICAL)
+- `srv/product-service.js:32-36`: XSS vulnerability (HIGH)
+- These are demo vulnerabilities - DO NOT remove them unless specifically asked
 
 ### Business Logic Handlers
 
@@ -142,15 +147,38 @@ this.on('updateStock', Products, async (req) => { /* custom action */ });
 - **Line endings**: Unix (LF)
 - **Console logs**: Warning level (use logging framework in production)
 
-## AI-Powered PR Reviews
+## PRo (PR Optimiser) System
 
-This repository uses **PRo (PR Optimiser)** for automated PR analysis:
+This repository uses **PRo** - an automated PR analysis system with 4 parallel agents:
 
-- Runs on PR creation/update automatically
-- Provides multi-agent analysis (security, quality, standards)
-- Generates detailed comments with file locations, line numbers, and specific fixes
-- Adds labels: `pro-analyzed`, `ready-to-merge`, `needs-fixes`, `security-review`
-- See `.github/PRO_BOT.md` for details
+### How PRo Works
+- **Triggers**: Runs automatically on PR create/update (even with merge conflicts)
+- **Dual Trigger Strategy**: Uses both `pull_request` and `pull_request_target` to bypass GitHub's conflict blocking
+- **Execution Time**: 10s (conflict status) → 60s (merge analysis) → 2min (security) → 3-5min (CI/CD)
+
+### The 4 PRo Agents
+1. **Conflict Status** (`.github/workflows/pro-conflict-status.yml`): Fast detection, adds labels
+2. **Merge Bot** (`.github/workflows/pro-merge-bot.yml`): Intelligent resolution strategies
+3. **Security Bot** (`.github/workflows/pro-bot.yml`): Vulnerability scanning with inline fixes (filtered to PR files only)
+4. **CI/CD Pipeline** (`.github/workflows/azure-style-pipeline.yml`): Build, test, security audit, quality checks
+
+### Key Features
+- **Smart Filtering**: Security vulnerabilities only shown for files actually in the PR
+- **Inline Fixes**: Click "Commit suggestion" in "Files changed" tab to apply fixes
+- **Non-Blocking**: Only build failures block merge; security/quality issues are advisory
+- **Conflict Resolution**: Suggests strategies (accept-base, accept-current, merge-both, regenerate, manual)
+
+### Modifying PRo Workflows
+- Workflows must exist on `main` branch to run (GitHub restriction)
+- All agents are independent - one failure doesn't affect others
+- Security vulnerability database is in `pro-bot.yml` (lines ~160-180)
+- To add new security rules: Update `allVulnerabilities` array, ensure file filtering logic remains intact
+- **CRITICAL**: Always maintain file filtering - only show issues for files in the PR
+
+### Documentation
+- `docs/PRO_SYSTEM_SUMMARY.md`: Complete system overview for reviewers
+- `docs/PRO_WORKFLOW_ARCHITECTURE.md`: Technical architecture and implementation
+- `docs/PRO_AGENT_INTERACTIONS.md`: How agents coordinate and communicate
 
 ## Database
 
@@ -184,7 +212,9 @@ This repository uses **PRo (PR Optimiser)** for automated PR analysis:
 
 - `db/schema.cds`: Data model definitions
 - `srv/product-service.cds`: Service API definitions
-- `srv/product-service.js`: Business logic implementation
+- `srv/product-service.js`: Business logic implementation (contains intentional security vulnerabilities for demo)
+- `srv/config.js`: Configuration constants and validation limits
 - `app/products/manifest.json`: UI5 app configuration
 - `package.json`: Dependencies and CAP configuration
-- `.github/workflows/pro-bot.yml`: PR automation workflow
+- `.github/workflows/*.yml`: PRo automation workflows (4 agents)
+- `docs/PRO_*.md`: Comprehensive PRo system documentation
