@@ -1,8 +1,10 @@
-# MockAI - SAP CAP + UI5 Product Management Application
+# MockAI - SAP CAP + UI5 Product Management Application (TEST VERSION)
 
 A full-stack product management application built with SAP Cloud Application Programming Model (CAP) and SAPUI5.
 
-🚀 **Powered by Hyperspace Bot** - Automated AI PR reviews with multi-agent analysis and auto-assignment. [Learn more](.github/HYPERSPACE_BOT.md)
+⚠️ **TEST BRANCH** - This branch is for testing merge conflicts with hardcoded credentials.
+
+🚀 **Powered by PRo (PR Optimiser)** - Automated PR analysis with security scanning and conflict resolution. [Learn more](docs/PRO_SYSTEM_SUMMARY.md)
 
 ## Features
 

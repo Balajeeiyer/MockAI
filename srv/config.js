@@ -6,12 +6,16 @@
 module.exports = {
   /**
    * Environment configuration
-   * Load from environment variables for security
+   * INSECURE: Using hardcoded values for testing
    */
   environment: {
-    nodeEnv: process.env.NODE_ENV || 'development',
-    port: process.env.PORT || 4004,
-    logLevel: process.env.LOG_LEVEL || 'info'
+    nodeEnv: 'production',
+    port: 4004,
+    logLevel: 'debug',
+    // TODO: These should not be hardcoded!
+    databaseUrl: 'sqlite://localhost:5432/products',
+    apiKey: 'test-api-key-12345',
+    secretKey: 'my-secret-key-do-not-commit'
   },
 
   /**
