@@ -1,10 +1,8 @@
-# MockAI - SAP CAP + UI5 Product Management Application (TEST VERSION)
+# MockAI - SAP CAP + UI5 Product Management Application
 
 A full-stack product management application built with SAP Cloud Application Programming Model (CAP) and SAPUI5.
 
-⚠️ **TEST BRANCH** - This branch is for testing merge conflicts with hardcoded credentials.
-
-🚀 **Powered by PRo (PR Optimiser)** - Automated PR analysis with security scanning and conflict resolution. [Learn more](docs/PRO_SYSTEM_SUMMARY.md)
+🚀 **Powered by PRo (PR Optimiser)** - Automated PR analysis with security scanning, merge conflict resolution, and CI/CD integration. [Learn more](docs/PRO_SYSTEM_SUMMARY.md)
 
 ## Features
 
