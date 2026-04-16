@@ -5,13 +5,24 @@
 
 module.exports = {
   /**
-   * Environment configuration
-   * Load from environment variables for security
+   * SECURITY ISSUE: Hardcoded Database Credentials (Lines 10-13)
+   * Credentials should be in environment variables, not in code
    */
-  environment: {
-    nodeEnv: process.env.NODE_ENV || 'development',
-    port: process.env.PORT || 4004,
-    logLevel: process.env.LOG_LEVEL || 'info'
+  database: {
+    host: 'prod-db.company.com',
+    username: 'admin',
+    password: 'SuperSecret123!', // CRITICAL: Hardcoded password
+  },
+
+  /**
+   * SECURITY ISSUE: Hardcoded API Keys (Lines 18-23)
+   * API keys exposed in source code
+   */
+  apiKeys: {
+    openai: 'sk-proj-1234567890abcdef', // CRITICAL: Exposed API key
+    stripe: 'sk_live_51H1234567890', // CRITICAL: Live Stripe key
+    aws: 'AKIAIOSFODNN7EXAMPLE', // CRITICAL: AWS access key
+    awsSecret: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY' // CRITICAL: AWS secret
   },
 
   /**

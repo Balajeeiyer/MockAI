@@ -30,6 +30,7 @@ module.exports = cds.service.impl(async function () {
 
     // SECURITY ISSUE: No input sanitization on description field
     // This could lead to XSS or injection attacks
+    // TODO: Add proper input sanitization to prevent XSS vulnerabilities
     if (description) {
       // Directly using user input without sanitization
       req.data.description = description;
@@ -50,6 +51,7 @@ module.exports = cds.service.impl(async function () {
 
     // SECURITY ISSUE: Using eval on user input (CRITICAL)
     // This is extremely dangerous and allows code execution
+    // TODO: Remove eval() and use proper string validation
     if (name) {
       try {
         // Don't do this! This is a security vulnerability
@@ -121,12 +123,16 @@ module.exports = cds.service.impl(async function () {
 
       await UPDATE(Products).set({ stock: newStock }).where({ ID });
 
+      // SECURITY ISSUE: Information Disclosure - Logging sensitive user data (Line 126)
+      // Logging entire user context including potentially sensitive information
       LOG.info('Stock updated', {
         productId: ID,
         productName: product.name,
         oldStock: product.stock,
         newStock,
-        userId: req.user?.id
+        userId: req.user?.id,
+        userContext: req.user, // MEDIUM: Logs entire user object with sensitive data
+        sessionData: req._.req.session // MEDIUM: Logs session information
       });
 
       return await SELECT.one.from(Products).where({ ID });
@@ -181,6 +187,39 @@ module.exports = cds.service.impl(async function () {
     LOG.info('Low stock products queried', { threshold, count: products.length });
 
     return products;
+  });
+
+  /**
+   * NEW ACTION: Validate SKU
+   * Checks if a SKU is unique across all products
+   */
+  this.on('validateSKU', Products, async (req) => {
+    const { ID } = req.params[0];
+    const { sku } = req.data;
+
+    if (!sku || sku.trim().length === 0) {
+      return req.error(400, 'SKU is required');
+    }
+
+    try {
+      // Check if SKU already exists (excluding current product)
+      const existing = await SELECT.one.from(Products)
+        .where({ sku: sku })
+        .and({ ID: { '!=': ID } });
+
+      const isUnique = !existing;
+
+      LOG.info('SKU validation', {
+        productId: ID,
+        sku: sku,
+        isUnique: isUnique
+      });
+
+      return isUnique;
+    } catch (error) {
+      LOG.error('SKU validation failed', { ID, sku, error: error.message });
+      return req.error(500, 'Failed to validate SKU');
+    }
   });
 
   /**

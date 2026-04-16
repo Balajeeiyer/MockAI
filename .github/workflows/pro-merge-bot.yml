@@ -115,6 +115,8 @@ jobs:
 
             console.log(`PR mergeable state: ${pr.mergeable_state}, mergeable: ${pr.mergeable}`);
 
+            const headSha = pr.head.sha;
+
             // Delete old PRo merge conflict comments
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
@@ -152,6 +154,7 @@ jobs:
 
             // Analyze each conflicted file
             const conflictAnalysis = [];
+            const inlineSuggestions = [];
 
             for (const filePath of conflictFiles) {
               try {
@@ -162,6 +165,7 @@ jobs:
                 let inConflict = false;
                 let conflictStart = -1;
                 let conflictMiddle = -1;
+                let conflictEnd = -1;
                 let currentSection = [];
                 let theirSection = [];
 
@@ -176,22 +180,40 @@ jobs:
                     conflictMiddle = i;
                     theirSection = [];
                   } else if (line.startsWith('>>>>>>>') && inConflict) {
+                    conflictEnd = i;
                     inConflict = false;
 
                     // Analyze this conflict section
                     const strategy = determineResolutionStrategy(
                       filePath,
                       currentSection,
-                      theirSection
+                      theirSection,
+                      conflictStart
                     );
 
                     conflictAnalysis.push({
                       file: filePath,
                       startLine: conflictStart + 1,
+                      endLine: conflictEnd + 1,
                       currentBranch: currentSection,
                       baseBranch: theirSection,
                       strategy: strategy
                     });
+
+                    // Create inline suggestion
+                    const suggestion = createInlineSuggestion(
+                      filePath,
+                      conflictStart,
+                      conflictEnd,
+                      currentSection,
+                      theirSection,
+                      strategy,
+                      headSha
+                    );
+
+                    if (suggestion) {
+                      inlineSuggestions.push(suggestion);
+                    }
                   } else if (inConflict) {
                     if (conflictMiddle === -1) {
                       currentSection.push(line);
@@ -205,45 +227,48 @@ jobs:
               }
             }
 
-            // Post summary comment with resolution suggestions
+            // Post summary comment with inline resolution suggestions
             let summaryBody = `## 🔀 PRo Merge Conflict Analysis
 
             ### ⚠️ Conflicts Found
 
-            This PR has **${conflictFiles.length} file(s)** with merge conflicts:
+            This PR has **${conflictFiles.length} file(s)** with merge conflicts that need resolution:
 
             `;
 
             for (const analysis of conflictAnalysis) {
-              summaryBody += `- **\`${analysis.file}\`** (Line ${analysis.startLine}) - ${analysis.strategy.name}\n`;
+              summaryBody += `- **\`${analysis.file}\`** (Line ${analysis.startLine})\n`;
+              summaryBody += `  - Strategy: ${analysis.strategy.name}\n`;
+              summaryBody += `  - ${analysis.strategy.description}\n\n`;
             }
 
-            summaryBody += `\n### 💡 Resolution Suggestions\n\n`;
-
-            for (const analysis of conflictAnalysis) {
-              const suggestion = createResolutionSuggestion(
-                analysis.file,
-                analysis.currentBranch,
-                analysis.baseBranch,
-                analysis.strategy
-              );
-
-              summaryBody += `
-            <details>
-            <summary><strong>\`${analysis.file}\`</strong></summary>
-
-            ${suggestion}
-
-            </details>
-
-            `;
+            // Post inline commit suggestions
+            for (const suggestion of inlineSuggestions) {
+              try {
+                await github.rest.pulls.createReviewComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber,
+                  body: suggestion.body,
+                  commit_id: headSha,
+                  path: suggestion.path,
+                  line: suggestion.line,
+                  side: suggestion.side
+                });
+                console.log(`Posted inline suggestion for ${suggestion.path}:${suggestion.line}`);
+              } catch (error) {
+                console.log(`Failed to post suggestion for ${suggestion.path}:${suggestion.line}: ${error.message}`);
+              }
             }
 
             summaryBody += `
+            ### 💡 View Inline Suggestions
+
+            Go to the **Files changed** tab to see commit suggestions for each conflict.
 
             ---
 
-            *🤖 PRo detected ${conflictFiles.length} conflicted file(s)*
+            *🤖 PRo detected ${conflictFiles.length} conflicted file(s) • View inline suggestions in Files changed tab*
             `;
 
             await github.rest.issues.createComment({
@@ -266,7 +291,8 @@ jobs:
             }
 
             // Helper function to determine resolution strategy
-            function determineResolutionStrategy(filePath, currentLines, baseLines) {
+            function determineResolutionStrategy(filePath, currentLines, baseLines, lineNum) {
+              // Analyze the conflict to suggest a strategy
               const currentCode = currentLines.join('\n').trim();
               const baseCode = baseLines.join('\n').trim();
 
@@ -276,6 +302,7 @@ jobs:
                   filePath.includes('pnpm-lock.yaml')) {
                 return {
                   name: 'Regenerate lock file',
+                  description: 'Delete lock file and regenerate',
                   resolution: 'regenerate'
                 };
               }
@@ -284,6 +311,7 @@ jobs:
               if (currentCode === baseCode) {
                 return {
                   name: 'Accept either (identical)',
+                  description: 'Both branches made the same change',
                   resolution: 'accept-current'
                 };
               }
@@ -292,6 +320,7 @@ jobs:
               if (currentCode === '' && baseCode !== '') {
                 return {
                   name: 'Keep base version',
+                  description: 'Your branch deleted this, base branch modified it',
                   resolution: 'accept-base'
                 };
               }
@@ -299,6 +328,7 @@ jobs:
               if (baseCode === '' && currentCode !== '') {
                 return {
                   name: 'Keep your changes',
+                  description: 'Base branch deleted this, you modified it',
                   resolution: 'accept-current'
                 };
               }
@@ -310,7 +340,8 @@ jobs:
                   if (baseCode.includes('environment:') || baseCode.includes('process.env')) {
                     return {
                       name: 'Accept main branch (secure config)',
-                      resolution: 'merge-config'
+                      description: 'Main branch uses environment variables - more secure than hardcoded values',
+                      resolution: 'accept-base'
                     };
                   }
                 }
@@ -318,17 +349,10 @@ jobs:
                 if (baseCode.includes('process.env') && !currentCode.includes('process.env')) {
                   return {
                     name: 'Merge configurations',
+                    description: 'Combine environment config from main with other settings',
                     resolution: 'merge-config'
                   };
                 }
-              }
-
-              // Check if it's workflow files - prefer main
-              if (filePath.includes('.github/workflows/')) {
-                return {
-                  name: 'Accept main branch (workflow)',
-                  resolution: 'accept-base'
-                };
               }
 
               // Check if it's import/dependency related
@@ -336,83 +360,75 @@ jobs:
                   baseCode.includes('import') || baseCode.includes('require')) {
                 return {
                   name: 'Merge both imports',
+                  description: 'Combine imports from both branches',
                   resolution: 'merge-both'
+                };
+              }
+
+              // Check if it's version numbers
+              if (filePath.includes('package.json') &&
+                  (currentCode.includes('version') || baseCode.includes('version'))) {
+                return {
+                  name: 'Use newer version',
+                  description: 'Keep the higher version number',
+                  resolution: 'use-newer'
                 };
               }
 
               // Default: manual review needed
               return {
                 name: 'Manual review required',
+                description: 'Both branches modified the same code - needs careful review',
                 resolution: 'manual'
               };
             }
 
-            // Helper function to create resolution suggestion
-            function createResolutionSuggestion(filePath, currentLines, baseLines, strategy) {
+            // Helper function to create inline suggestion
+            function createInlineSuggestion(filePath, startLine, endLine, currentLines, baseLines, strategy, commitId) {
               let resolvedContent = '';
+              let suggestionBody = '';
 
               if (strategy.resolution === 'accept-current') {
                 resolvedContent = currentLines.join('\n');
-                return [
+                suggestionBody = [
+                  '**🔀 Merge Conflict Resolution**',
+                  '',
                   '**Recommended**: Keep your branch changes',
                   '',
-                  '**Resolution code**:',
-                  '```javascript',
+                  '```suggestion',
                   resolvedContent,
-                  '```',
-                  '',
-                  '**To apply**:',
-                  '```bash',
-                  `git checkout ${headRef}`,
-                  `git merge ${baseRef}`,
-                  `# In conflict file, keep everything between <<<<<<< HEAD and =======`,
-                  `git add ${filePath}`,
-                  `git commit -m "fix: resolve ${filePath} conflict - keep feature changes"`,
-                  `git push`,
                   '```'
                 ].join('\n');
 
               } else if (strategy.resolution === 'accept-base') {
                 resolvedContent = baseLines.join('\n');
-                return [
-                  '**Recommended**: Accept main branch changes',
+                suggestionBody = [
+                  '**🔀 Merge Conflict Resolution**',
                   '',
-                  '**Resolution code**:',
-                  '```javascript',
+                  '**Recommended**: Accept main branch (secure configuration)',
+                  '',
+                  '```suggestion',
                   resolvedContent,
-                  '```',
-                  '',
-                  '**To apply**:',
-                  '```bash',
-                  `git checkout ${headRef}`,
-                  `git merge ${baseRef}`,
-                  `# In conflict file, keep everything between ======= and >>>>>>>`,
-                  `git add ${filePath}`,
-                  `git commit -m "fix: resolve ${filePath} conflict - accept main"`,
-                  `git push`,
                   '```'
                 ].join('\n');
 
               } else if (strategy.resolution === 'merge-both') {
+                // Merge both sections
                 const merged = [...new Set([...currentLines, ...baseLines])];
                 resolvedContent = merged.join('\n');
-                return [
+                suggestionBody = [
+                  '**🔀 Merge Conflict Resolution**',
+                  '',
                   '**Recommended**: Combine both changes',
                   '',
-                  '**Resolution code**:',
-                  '```javascript',
+                  '```suggestion',
                   resolvedContent,
-                  '```',
-                  '',
-                  '**To apply**: Edit file manually, paste the code above, remove conflict markers, then:',
-                  '```bash',
-                  `git add ${filePath}`,
-                  `git commit -m "fix: resolve ${filePath} conflict - merge both"`,
-                  `git push`,
                   '```'
                 ].join('\n');
 
               } else if (strategy.resolution === 'merge-config') {
+                // Special handling for config file merges
+                // Prefer main branch's environment config approach
                 resolvedContent = [
                   '  /**',
                   '   * Environment configuration',
@@ -425,58 +441,62 @@ jobs:
                   '  },'
                 ].join('\n');
 
-                return [
-                  '**Recommended**: Use environment variables (secure) ✅',
+                suggestionBody = [
+                  '**🔀 Merge Conflict Resolution**',
                   '',
-                  '**Resolution code**:',
-                  '```javascript',
+                  '**Recommended**: Use environment variables (secure)',
+                  '',
+                  '```suggestion',
                   resolvedContent,
-                  '```',
-                  '',
-                  '**To apply**: Edit `srv/config.js`, replace the conflicted section with code above, then:',
-                  '```bash',
-                  'git add srv/config.js',
-                  'git commit -m "fix: resolve config conflict - use secure environment variables"',
-                  'git push',
                   '```'
                 ].join('\n');
 
               } else if (strategy.resolution === 'regenerate') {
-                return [
+                suggestionBody = [
+                  '**🔀 Merge Conflict Resolution**',
+                  '',
                   '**Recommended**: Regenerate lock file',
                   '',
-                  '**To apply**:',
                   '```bash',
                   'rm package-lock.json',
                   'npm install',
                   'git add package-lock.json',
                   'git commit -m "fix: regenerate package-lock.json"',
-                  'git push',
                   '```'
                 ].join('\n');
 
+                return {
+                  path: filePath,
+                  line: startLine + 1,
+                  side: 'RIGHT',
+                  body: suggestionBody
+                };
+
               } else {
-                return [
+                // Manual review needed
+                suggestionBody = [
+                  '**🔀 Merge Conflict Resolution**',
+                  '',
                   '**Manual review required** - Both branches modified the same code',
                   '',
-                  '**Your branch**:',
-                  '```javascript',
-                  currentLines.slice(0, 15).join('\n') + (currentLines.length > 15 ? '\n...' : ''),
-                  '```',
-                  '',
-                  '**Main branch**:',
-                  '```javascript',
-                  baseLines.slice(0, 15).join('\n') + (baseLines.length > 15 ? '\n...' : ''),
-                  '```',
-                  '',
-                  '**To resolve**: Review both versions, edit the file, remove conflict markers, then:',
-                  '```bash',
-                  `git add ${filePath}`,
-                  `git commit -m "fix: resolve ${filePath} conflict"`,
-                  `git push`,
-                  '```'
+                  'Review both versions and choose the best resolution.'
                 ].join('\n');
+
+                return {
+                  path: filePath,
+                  line: startLine + 1,
+                  side: 'RIGHT',
+                  body: suggestionBody
+                };
               }
+
+              // Return suggestion with resolved content
+              return {
+                path: filePath,
+                line: startLine + 1,
+                side: 'RIGHT',
+                body: suggestionBody
+              };
             }
 
       - name: No conflicts detected

@@ -1,6 +1,11 @@
 name: 🔍 Azure-Style Build & Security Analysis
 
 on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+      - master
   pull_request:
     types: [opened, synchronize, reopened]
     branches:
@@ -295,19 +300,26 @@ jobs:
             `;
 
             if (inlineSuggestionsPosted > 0) {
-              summaryBody += '### 📍 Inline Suggestions\n\n';
-              summaryBody += `I've added ${inlineSuggestionsPosted} inline code suggestion(s) directly on the affected lines:\n`;
-              summaryBody += '- srv/product-service.js:32 - XSS vulnerability fix\n';
-              summaryBody += '- srv/product-service.js:52 - Critical eval() code injection fix\n\n';
-              summaryBody += '**To view**: Go to the **Files changed** tab and look for the comment icons.\n';
-              summaryBody += '**To apply**: Click the **Commit suggestion** button on any suggestion.\n\n';
+              summaryBody += `### 📍 Inline Suggestions
+I've added ${inlineSuggestionsPosted} inline code suggestion(s) directly on the affected lines:
+- \`srv/product-service.js:32\` - XSS vulnerability fix
+- \`srv/product-service.js:52\` - Critical eval() code injection fix
+
+**To view**: Go to the **Files changed** tab and look for the 💬 comment icons.
+**To apply**: Click the **"Commit suggestion"** button on any suggestion.
+
+`;
             } else {
-              summaryBody += '### ℹ️ Note\n\n';
-              summaryBody += 'Security issues detected but inline suggestions can only be posted on files changed in this PR.\n\n';
-              summaryBody += '**Issues found in**:\n';
-              summaryBody += '- srv/product-service.js:32 - XSS vulnerability (sanitize description input)\n';
-              summaryBody += '- srv/product-service.js:52 - Critical code injection via eval()\n\n';
-              summaryBody += '**To fix**: Modify these files in your PR to see inline commit suggestions.\n\n';
+              summaryBody += `### ℹ️ Note
+Security issues detected but inline suggestions can only be posted on files changed in this PR.
+
+**Issues found in**:
+- \`srv/product-service.js:32\` - XSS vulnerability (sanitize description input)
+- \`srv/product-service.js:52\` - Critical code injection via eval()
+
+**To fix**: Modify these files in your PR to see inline commit suggestions.
+
+`;
             }
 
             summaryBody += `### ✅ How to Apply

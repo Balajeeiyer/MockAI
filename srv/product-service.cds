@@ -11,6 +11,7 @@ service ProductService @(path: '/products') {
    * Allows full CRUD operations on products
    */
   @odata.draft.enabled
+  @cds.redirection.target
   entity Products as projection on db.Products actions {
     /**
      * Update stock level
@@ -21,6 +22,11 @@ service ProductService @(path: '/products') {
      * Activate/Deactivate product
      */
     action toggleActive() returns Products;
+
+    /**
+     * NEW ACTION: Validate SKU uniqueness
+     */
+    action validateSKU(sku : String) returns Boolean;
   };
 
   /**

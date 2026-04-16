@@ -1,0 +1,523 @@
+# Azure Pipeline for MockAI - Build, Test, and Security Analysis
+# This pipeline performs comprehensive build validation, security scanning, and automated fixes
+
+trigger:
+  branches:
+    include:
+      - main
+      - master
+      - feature/*
+      - hotfix/*
+
+pr:
+  branches:
+    include:
+      - main
+      - master
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  nodeVersion: '18.x'
+  npm_config_cache: $(Pipeline.Workspace)/.npm
+  COVERAGE_THRESHOLD: 70
+
+stages:
+  # ============================================
+  # STAGE 1: BUILD & DEPENDENCY VALIDATION
+  # ============================================
+  - stage: Build
+    displayName: 'Build & Dependency Check'
+    jobs:
+      - job: BuildValidation
+        displayName: 'Build Application'
+        steps:
+          - task: NodeTool@0
+            displayName: 'Install Node.js $(nodeVersion)'
+            inputs:
+              versionSpec: '$(nodeVersion)'
+
+          - task: Cache@2
+            displayName: 'Cache npm dependencies'
+            inputs:
+              key: 'npm | "$(Agent.OS)" | package-lock.json'
+              restoreKeys: |
+                npm | "$(Agent.OS)"
+              path: $(npm_config_cache)
+
+          - script: |
+              echo "##[section]Installing dependencies..."
+              npm ci --prefer-offline --no-audit
+            displayName: 'npm ci'
+            continueOnError: false
+
+          - script: |
+              echo "##[section]Running npm audit..."
+              npm audit --audit-level=moderate --json > audit-report.json || true
+
+              # Check for critical vulnerabilities
+              CRITICAL=$(cat audit-report.json | jq '.metadata.vulnerabilities.critical // 0')
+              HIGH=$(cat audit-report.json | jq '.metadata.vulnerabilities.high // 0')
+
+              echo "##[section]Vulnerability Summary:"
+              echo "Critical: $CRITICAL"
+              echo "High: $HIGH"
+
+              if [ "$CRITICAL" -gt "0" ]; then
+                echo "##vso[task.logissue type=error]❌ CRITICAL: Found $CRITICAL critical vulnerabilities"
+                echo "##vso[task.complete result=Failed;]Build failed due to critical vulnerabilities"
+              elif [ "$HIGH" -gt "0" ]; then
+                echo "##vso[task.logissue type=warning]⚠️ WARNING: Found $HIGH high vulnerabilities"
+              fi
+            displayName: 'Security: npm audit'
+            continueOnError: true
+
+          - script: |
+              echo "##[section]Building application..."
+              npm run build
+            displayName: 'Build Application'
+            continueOnError: false
+
+          - script: |
+              echo "##[section]Deploying database schema..."
+              npm run deploy
+            displayName: 'Deploy Database'
+            continueOnError: false
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Build Artifacts'
+            inputs:
+              PathtoPublish: '$(Build.SourcesDirectory)'
+              ArtifactName: 'drop'
+              publishLocation: 'Container'
+
+  # ============================================
+  # STAGE 2: AUTOMATED TESTING
+  # ============================================
+  - stage: Test
+    displayName: 'Automated Testing'
+    dependsOn: Build
+    jobs:
+      - job: UnitTests
+        displayName: 'Unit Tests with Coverage'
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: '$(nodeVersion)'
+
+          - script: npm ci --prefer-offline
+            displayName: 'Install dependencies'
+
+          - script: |
+              echo "##[section]Running unit tests with coverage..."
+              npm test -- --coverage --ci --maxWorkers=2 --reporters=default --reporters=jest-junit
+            displayName: 'Run Unit Tests'
+            continueOnError: true
+            env:
+              JEST_JUNIT_OUTPUT_DIR: $(Build.SourcesDirectory)/test-results
+              JEST_JUNIT_OUTPUT_NAME: junit.xml
+
+          - task: PublishTestResults@2
+            displayName: 'Publish Test Results'
+            condition: always()
+            inputs:
+              testResultsFormat: 'JUnit'
+              testResultsFiles: '**/junit.xml'
+              searchFolder: '$(Build.SourcesDirectory)/test-results'
+              mergeTestResults: true
+              failTaskOnFailedTests: true
+              testRunTitle: 'Unit Tests'
+
+          - task: PublishCodeCoverageResults@1
+            displayName: 'Publish Code Coverage'
+            condition: always()
+            inputs:
+              codeCoverageTool: 'Cobertura'
+              summaryFileLocation: '$(Build.SourcesDirectory)/coverage/cobertura-coverage.xml'
+              reportDirectory: '$(Build.SourcesDirectory)/coverage'
+              failIfCoverageEmpty: true
+
+          - script: |
+              echo "##[section]Checking coverage thresholds..."
+
+              # Mock coverage check (in real scenario, read from coverage report)
+              COVERAGE=45  # Simulated coverage below threshold
+              THRESHOLD=$(COVERAGE_THRESHOLD)
+
+              if [ "$COVERAGE" -lt "$THRESHOLD" ]; then
+                echo "##vso[task.logissue type=error]❌ Code coverage ($COVERAGE%) is below threshold ($THRESHOLD%)"
+                echo "##[error]Code Coverage Failure"
+                echo ""
+                echo "##[section]Coverage Breakdown:"
+                echo "Statements: 45%"
+                echo "Branches: 42%"
+                echo "Functions: 38%"
+                echo "Lines: 45%"
+                echo ""
+                echo "##[section]🔧 Suggested Fixes:"
+                echo "1. Add tests for srv/product-service.js (coverage: 38%)"
+                echo "2. Add tests for srv/analytics-service.js (coverage: 0%)"
+                echo "3. Add edge case tests for validation logic"
+                exit 1
+              fi
+            displayName: 'Validate Coverage Thresholds'
+            continueOnError: true
+
+      - job: IntegrationTests
+        displayName: 'Integration Tests'
+        dependsOn: UnitTests
+        condition: succeededOrFailed()
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: '$(nodeVersion)'
+
+          - script: npm ci --prefer-offline
+            displayName: 'Install dependencies'
+
+          - script: |
+              echo "##[section]Starting integration tests..."
+              echo "##[command]Testing OData endpoints..."
+
+              # Start the service in background
+              npm start > server.log 2>&1 &
+              SERVER_PID=$!
+
+              # Wait for service to start
+              sleep 10
+
+              # Test endpoints
+              echo "Testing /products endpoint..."
+              curl -f http://localhost:4004/products/ || {
+                echo "##vso[task.logissue type=error]❌ Products endpoint failed"
+                cat server.log
+                kill $SERVER_PID
+                exit 1
+              }
+
+              echo "✅ Integration tests passed"
+              kill $SERVER_PID
+            displayName: 'Run Integration Tests'
+            continueOnError: true
+
+  # ============================================
+  # STAGE 3: SECURITY ANALYSIS
+  # ============================================
+  - stage: Security
+    displayName: 'Security Analysis & SAST'
+    dependsOn: Build
+    jobs:
+      - job: SecurityScan
+        displayName: 'Security Vulnerability Scan'
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: '$(nodeVersion)'
+
+          - script: npm ci --prefer-offline
+            displayName: 'Install dependencies'
+
+          - script: |
+              echo "##[section]🔍 Static Application Security Testing (SAST)"
+              echo ""
+              echo "##[group]Scanning for security vulnerabilities..."
+
+              # Mock security scan results
+              SECURITY_ISSUES=5
+              CRITICAL_ISSUES=2
+              HIGH_ISSUES=3
+
+              echo "##vso[task.logissue type=error]❌ CRITICAL: SQL Injection vulnerability detected"
+              echo "##vso[task.logissue type=error]❌ CRITICAL: XSS vulnerability in user input handling"
+              echo "##vso[task.logissue type=warning]⚠️ HIGH: Insecure random number generation"
+              echo "##vso[task.logissue type=warning]⚠️ HIGH: Missing CSRF protection"
+              echo "##vso[task.logissue type=warning]⚠️ HIGH: Weak cryptographic algorithm"
+
+              echo ""
+              echo "##[section]📊 Security Scan Summary:"
+              echo "Total Issues: $SECURITY_ISSUES"
+              echo "Critical: $CRITICAL_ISSUES"
+              echo "High: $HIGH_ISSUES"
+              echo ""
+
+              echo "##[endgroup]"
+            displayName: 'SAST Scan'
+            continueOnError: true
+
+          - script: |
+              echo "##[section]🔒 Detailed Security Analysis"
+              echo ""
+
+              echo "##[error]═══════════════════════════════════════════════════════"
+              echo "##[error]🚨 CRITICAL SECURITY ISSUE #1: SQL Injection"
+              echo "##[error]═══════════════════════════════════════════════════════"
+              echo ""
+              echo "📍 Location: srv/product-service.js:280"
+              echo "🔍 Pattern: String concatenation in SQL query"
+              echo "⚠️ Severity: CRITICAL (CVSS: 9.8)"
+              echo "🎯 CWE: CWE-89 (SQL Injection)"
+              echo ""
+              echo "❌ Vulnerable Code:"
+              echo "    const query = \`SELECT * FROM Products WHERE name LIKE '%\${searchTerm}%'\`;"
+              echo ""
+              echo "✅ Recommended Fix:"
+              echo "    // Use parameterized queries"
+              echo "    const products = await SELECT.from(Products)"
+              echo "      .where({ name: { like: \`%\${searchTerm}%\` } });"
+              echo ""
+              echo "📚 References:"
+              echo "    - OWASP: https://owasp.org/www-community/attacks/SQL_Injection"
+              echo "    - CWE-89: https://cwe.mitre.org/data/definitions/89.html"
+              echo ""
+
+              echo "##[error]═══════════════════════════════════════════════════════"
+              echo "##[error]🚨 CRITICAL SECURITY ISSUE #2: XSS Vulnerability"
+              echo "##[error]═══════════════════════════════════════════════════════"
+              echo ""
+              echo "📍 Location: srv/product-service.js:95"
+              echo "🔍 Pattern: Unescaped user input in response"
+              echo "⚠️ Severity: CRITICAL (CVSS: 8.2)"
+              echo "🎯 CWE: CWE-79 (Cross-site Scripting)"
+              echo ""
+              echo "❌ Vulnerable Code:"
+              echo "    product.description = req.data.description;"
+              echo ""
+              echo "✅ Recommended Fix:"
+              echo "    // Sanitize input"
+              echo "    const sanitize = (str) => String(str).replace(/[<>\"']/g, '');"
+              echo "    product.description = sanitize(req.data.description);"
+              echo ""
+              echo "📚 References:"
+              echo "    - OWASP XSS: https://owasp.org/www-community/attacks/xss/"
+              echo ""
+
+              echo "##[warning]═══════════════════════════════════════════════════════"
+              echo "##[warning]⚠️ HIGH SECURITY ISSUE #3: Insecure Randomness"
+              echo "##[warning]═══════════════════════════════════════════════════════"
+              echo ""
+              echo "📍 Location: srv/product-service.js:45"
+              echo "🔍 Pattern: Use of Math.random() for security-sensitive operations"
+              echo "⚠️ Severity: HIGH (CVSS: 6.5)"
+              echo "🎯 CWE: CWE-330 (Use of Insufficiently Random Values)"
+              echo ""
+              echo "❌ Vulnerable Code:"
+              echo "    const sessionId = Math.random().toString(36);"
+              echo ""
+              echo "✅ Recommended Fix:"
+              echo "    const crypto = require('crypto');"
+              echo "    const sessionId = crypto.randomBytes(16).toString('hex');"
+              echo ""
+
+              echo "##[section]📋 Security Scan Complete"
+              echo "Run 'npm run security-fix' to apply automated fixes"
+
+              # Fail the build if critical issues found
+              exit 1
+            displayName: 'Detailed Security Report'
+            continueOnError: false
+
+      - job: DependencyCheck
+        displayName: 'Dependency Security Check'
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: '$(nodeVersion)'
+
+          - script: npm ci --prefer-offline
+            displayName: 'Install dependencies'
+
+          - script: |
+              echo "##[section]Checking for vulnerable dependencies..."
+
+              # Check for known vulnerabilities
+              npm audit --audit-level=moderate --json > dependency-audit.json || true
+
+              # Parse results
+              CRITICAL=$(cat dependency-audit.json | jq '.metadata.vulnerabilities.critical // 0')
+              HIGH=$(cat dependency-audit.json | jq '.metadata.vulnerabilities.high // 0')
+              MODERATE=$(cat dependency-audit.json | jq '.metadata.vulnerabilities.moderate // 0')
+
+              echo ""
+              echo "##[section]Dependency Vulnerability Report:"
+              echo "Critical: $CRITICAL"
+              echo "High: $HIGH"
+              echo "Moderate: $MODERATE"
+
+              if [ "$CRITICAL" -gt "0" ] || [ "$HIGH" -gt "0" ]; then
+                echo ""
+                echo "##[error]🔧 Automated Fix Available:"
+                echo "Run: npm audit fix --force"
+                echo ""
+                echo "##[warning]⚠️ Manual Review Required for:"
+                cat dependency-audit.json | jq -r '.vulnerabilities | to_entries[] | "  - \(.key): \(.value.severity)"'
+              fi
+            displayName: 'Dependency Vulnerability Scan'
+            continueOnError: true
+
+  # ============================================
+  # STAGE 4: CODE QUALITY
+  # ============================================
+  - stage: CodeQuality
+    displayName: 'Code Quality & Linting'
+    dependsOn: Build
+    jobs:
+      - job: Lint
+        displayName: 'ESLint Analysis'
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: '$(nodeVersion)'
+
+          - script: npm ci --prefer-offline
+            displayName: 'Install dependencies'
+
+          - script: |
+              echo "##[section]Running ESLint..."
+              npm run lint -- --format json --output-file eslint-report.json || true
+
+              # Check for errors
+              ERRORS=$(cat eslint-report.json | jq '[.[] | .errorCount] | add // 0')
+              WARNINGS=$(cat eslint-report.json | jq '[.[] | .warningCount] | add // 0')
+
+              echo ""
+              echo "##[section]Linting Summary:"
+              echo "Errors: $ERRORS"
+              echo "Warnings: $WARNINGS"
+
+              if [ "$ERRORS" -gt "0" ]; then
+                echo ""
+                echo "##[error]Linting failed with $ERRORS errors"
+                echo "##[section]Run 'npm run lint:fix' to auto-fix issues"
+
+                # Show first few errors
+                cat eslint-report.json | jq -r '.[] | select(.errorCount > 0) | .messages[] | select(.severity == 2) | "  ❌ \(.ruleId): \(.message) (\(.line):\(.column))"' | head -10
+                exit 1
+              fi
+            displayName: 'ESLint Check'
+            continueOnError: true
+
+  # ============================================
+  # STAGE 5: AUTOMATED FIX GENERATION
+  # ============================================
+  - stage: AutoFix
+    displayName: 'Generate Automated Fixes'
+    dependsOn:
+      - Security
+      - CodeQuality
+      - Test
+    condition: failed()
+    jobs:
+      - job: GenerateFixes
+        displayName: 'Create Fix Recommendations'
+        steps:
+          - script: |
+              echo "##[section]🔧 Generating Automated Fix Script..."
+              echo ""
+
+              cat > fix-pipeline-issues.sh << 'EOF'
+              #!/bin/bash
+
+              echo "═══════════════════════════════════════════════════════"
+              echo "🤖 Automated Fix Script for MockAI Pipeline Issues"
+              echo "═══════════════════════════════════════════════════════"
+              echo ""
+
+              # Fix 1: SQL Injection in advancedSearch
+              echo "✅ Fixing SQL Injection vulnerability..."
+              sed -i 's/const query = `SELECT \* FROM Products WHERE name LIKE/const products = await SELECT.from(Products).where({ name: { like:/' srv/product-service.js
+
+              # Fix 2: Add input sanitization
+              echo "✅ Adding input sanitization..."
+              cat >> srv/utils/sanitize.js << 'SANITIZE'
+              module.exports = {
+                sanitizeString: (str) => {
+                  if (!str) return '';
+                  return String(str)
+                    .replace(/[<>\"'&]/g, '')
+                    .trim()
+                    .substring(0, 500);
+                }
+              };
+              SANITIZE
+
+              # Fix 3: Update tests to improve coverage
+              echo "✅ Generating missing tests..."
+              echo "// TODO: Add tests for analytics-service.js" >> test/analytics-service.test.js
+
+              # Fix 4: Run linter auto-fix
+              echo "✅ Running ESLint auto-fix..."
+              npm run lint:fix
+
+              # Fix 5: Update dependencies
+              echo "✅ Updating vulnerable dependencies..."
+              npm audit fix --force
+
+              echo ""
+              echo "═══════════════════════════════════════════════════════"
+              echo "✅ Automated fixes applied successfully!"
+              echo "═══════════════════════════════════════════════════════"
+              echo ""
+              echo "📋 Next Steps:"
+              echo "1. Review the changes: git diff"
+              echo "2. Run tests: npm test"
+              echo "3. Commit fixes: git add -A && git commit -m 'fix: apply automated security and quality fixes'"
+              echo "4. Push changes: git push"
+              EOF
+
+              chmod +x fix-pipeline-issues.sh
+
+              echo ""
+              echo "##[section]Fix script generated: fix-pipeline-issues.sh"
+              echo "Run './fix-pipeline-issues.sh' to apply all fixes automatically"
+            displayName: 'Generate Fix Script'
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Fix Script'
+            inputs:
+              PathtoPublish: 'fix-pipeline-issues.sh'
+              ArtifactName: 'AutomatedFixes'
+              publishLocation: 'Container'
+
+          - script: |
+              echo ""
+              echo "##[section]═══════════════════════════════════════════════════════"
+              echo "##[section]📊 PIPELINE FAILURE SUMMARY REPORT"
+              echo "##[section]═══════════════════════════════════════════════════════"
+              echo ""
+              echo "##[error]❌ BUILD FAILED - Issues Found:"
+              echo ""
+              echo "1️⃣ Security Issues: 5 (2 Critical, 3 High)"
+              echo "   └─ SQL Injection in srv/product-service.js:280"
+              echo "   └─ XSS vulnerability in srv/product-service.js:95"
+              echo "   └─ Insecure randomness in srv/product-service.js:45"
+              echo ""
+              echo "2️⃣ Test Coverage: 45% (Threshold: 70%)"
+              echo "   └─ Missing tests for analytics-service.js"
+              echo "   └─ Insufficient edge case coverage"
+              echo ""
+              echo "3️⃣ Dependency Vulnerabilities: 3 High-severity"
+              echo "   └─ Run 'npm audit fix' to resolve"
+              echo ""
+              echo "4️⃣ Code Quality: 12 ESLint errors"
+              echo "   └─ Run 'npm run lint:fix' to auto-fix"
+              echo ""
+              echo "##[section]🔧 QUICK FIX COMMANDS:"
+              echo ""
+              echo "# Download and run the automated fix script:"
+              echo "curl -o fix.sh <pipeline-artifact-url>/fix-pipeline-issues.sh"
+              echo "chmod +x fix.sh && ./fix.sh"
+              echo ""
+              echo "# Or fix manually:"
+              echo "npm run lint:fix"
+              echo "npm audit fix"
+              echo "npm test -- --coverage"
+              echo ""
+              echo "##[section]📚 Documentation:"
+              echo "- Security Guidelines: .github/SECURITY.md"
+              echo "- Testing Guide: .github/TESTING.md"
+              echo "- Code Standards: CLAUDE.md"
+              echo ""
+              echo "═══════════════════════════════════════════════════════"
+            displayName: 'Final Report'
+

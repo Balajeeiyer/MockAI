@@ -4,6 +4,7 @@ A full-stack product management application built with SAP Cloud Application Pro
 
 🚀 **Powered by PRo (PR Optimiser)** - Automated PR analysis with security scanning, merge conflict resolution, and CI/CD integration. [Learn more](docs/PRO_SYSTEM_SUMMARY.md)
 
+
 ## Features
 
 - **Backend**: SAP CAP with CDS models
