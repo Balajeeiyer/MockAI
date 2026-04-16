@@ -7,11 +7,16 @@ module.exports = {
   /**
    * Environment configuration
    * Load from environment variables for security
+   * Updated: Enhanced with additional environment variables
    */
   environment: {
     nodeEnv: process.env.NODE_ENV || 'development',
     port: process.env.PORT || 4004,
-    logLevel: process.env.LOG_LEVEL || 'info'
+    logLevel: process.env.LOG_LEVEL || 'info',
+    // Secure: Load from environment, never hardcode
+    databaseUrl: process.env.DATABASE_URL || 'sqlite://db/products.db',
+    apiKey: process.env.API_KEY || '',
+    secretKey: process.env.SECRET_KEY || ''
   },
 
   /**
