@@ -13,9 +13,10 @@ module.exports = cds.service.impl(async function () {
   /**
    * Before CREATE handler for Products
    * Validates product data before creation
+   * Updated: Added enhanced validation for testing
    */
   this.before('CREATE', Products, async (req) => {
-    const { price, stock, name, currency, description } = req.data;
+    const { price, stock, name, currency, description, category_ID } = req.data;
 
     // Validate price
     if (price === undefined || price === null) {
