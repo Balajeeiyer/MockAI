@@ -100,24 +100,12 @@ The main branch version is more secure and follows best practices. The feature b
 
 ---
 
-## Conflict 3: README.md (EXISTING)
-
-**File:** `README.md`  
-**Location:** Multiple sections
-
-### Recommended Resolution: **ACCEPT-BASE (main)**
-
-The main branch contains the most up-to-date documentation with proper PRo system references.
-
----
-
 ## Summary of Resolutions
 
 | File | Conflict Type | Resolution Strategy | Rationale |
 |------|---------------|---------------------|-----------|
 | `db/schema.cds` | Feature addition | **MERGE-BOTH** | Complementary fields (minStock + maxStock) |
 | `srv/config.js` | Security/configuration | **ACCEPT-BASE** | Main branch is secure; feature has demo vulnerabilities |
-| `README.md` | Documentation | **ACCEPT-BASE** | Main branch has latest documentation |
 
 ---
 
@@ -131,7 +119,7 @@ git merge main
 
 # Edit each conflicted file according to resolutions above
 # Then:
-git add db/schema.cds srv/config.js README.md
+git add db/schema.cds srv/config.js
 git commit -m "resolve: merge conflicts - keep both stock fields, use secure config"
 git push origin feature/test-merge-conflict-demo
 ```
