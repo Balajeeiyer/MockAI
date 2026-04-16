@@ -12,6 +12,7 @@ entity Products : cuid, managed {
       price       : Decimal(10, 2) @mandatory;
       currency    : String(3) default 'USD';
       stock       : Integer default 0;
+      minStock    : Integer default 5; // Minimum stock threshold for reordering
       category    : Association to Categories;
       supplier    : Association to Suppliers;
       isActive    : Boolean default true;

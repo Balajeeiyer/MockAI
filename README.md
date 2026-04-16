@@ -2,7 +2,8 @@
 
 A full-stack product management application built with SAP Cloud Application Programming Model (CAP) and SAPUI5.
 
-🚀 **Powered by PRo (PR Optimiser)** - Automated AI PR reviews with multi-agent analysis, security scanning, and intelligent merge conflict resolution. [Learn more](.github/PRO_BOT.md)
+🚀 **Powered by PRo (PR Optimiser)** - Automated PR analysis with security scanning, merge conflict resolution, and CI/CD integration. [Learn more](docs/PRO_SYSTEM_SUMMARY.md)
+
 
 ## Features
 
